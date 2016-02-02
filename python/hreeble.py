@@ -3,7 +3,7 @@ from init_hrpyc import hou
 
 
 class Shape(object):
-    def __init__(self, coords, prim):
+    def __init__(self, coords, prim, flip=False):
         self.coords = coords
         self.prim = prim
 
@@ -31,7 +31,6 @@ class Shape(object):
                 min_t = pt[1]
 
         return hou.Vector2(min_s, min_t), hou.Vector2(max_s, max_t)
-
 
     def scale(self, val):
         pivot = self.pivot()
@@ -76,6 +75,72 @@ class Shape(object):
             new_point.setAttribValue("st", (round(pt[0], 2), round(pt[1], 2)))
             poly.addVertex(new_point)
 
+def build_prim(pt0, pt1, pt2, pt3):
+    poly = geo.createPolygon()
+    poly.addVertex(pt0)
+    poly.addVertex(pt1)
+    poly.addVertex(pt2)
+    poly.addVertex(pt3)
+    return poly
+
+def extrude_prim(prim, height, inset=0.1):
+    primN = prim.normal()
+    primP = hou.Vector3(prim.attribValueAtInterior("P", 0.5, 0.5))
+    center = primP + primN * height
+    pairs = []
+    for vt in prim.vertices():
+        new_pt = geo.createPoint()
+        new_pt_pos = vt.point().position() + primN * height
+        inset_dir = (center - new_pt_pos).normalized()
+        new_pt_pos += inset_dir * inset
+        new_pt.setPosition(new_pt_pos)
+        pairs.append((vt.point(), new_pt))
+    build_prim(pairs[0][1], pairs[1][1], pairs[2][1], pairs[3][1])
+    for i in range(3):
+        build_prim(pairs[i][0], pairs[i+1][0], pairs[i+1][1], pairs[i][1])
+    build_prim(pairs[-1][0], pairs[0][0], pairs[0][1], pairs[-1][1])
+    old_prims.append(prim)
+
+class Stripe(Shape):
+    def __init__(self, prim, flip=False):
+        coords = [hou.Vector2(0.0, 0.0), hou.Vector2(0.0, 0.6),
+                  hou.Vector2(0.1, 0.6), hou.Vector2(0.1, 0.0)]
+        super(Stripe, self).__init__(coords=coords, prim=prim)
+
+
+class TShapeH(Shape):
+    def __init__(self, prim, flip=False):
+        coords = [hou.Vector2(0.0, 0.0),
+                  hou.Vector2(0.0, 0.33),
+                  hou.Vector2(0.33, 0.33),
+                  hou.Vector2(0.33, 0.66),
+                  hou.Vector2(0.66, 0.66),
+                  hou.Vector2(0.66, 0.33),
+                  hou.Vector2(0.99, 0.33),
+                  hou.Vector2(0.99, 0.0),
+                  ]
+        if flip:
+            for i in range(len(coords)):
+                coords[i][1] = 1 - coords[i][1]
+        super(TShapeH, self).__init__(coords=coords, prim=prim)
+
+
+class TShapeV(Shape):
+    def __init__(self, prim, flip=False):
+        coords = [hou.Vector2(0.0, 0.0),
+                  hou.Vector2(0.0, 0.99),
+                  hou.Vector2(0.33, 0.99),
+                  hou.Vector2(0.33, 0.66),
+                  hou.Vector2(0.66, 0.66),
+                  hou.Vector2(0.66, 0.33),
+                  hou.Vector2(0.33, 0.33),
+                  hou.Vector2(0.33, 0.0),
+                  ]
+        if flip:
+            for i in range(len(coords)):
+                coords[i][0] = 1 - coords[i][0]
+        super(TShapeV, self).__init__(coords=coords, prim=prim)
+
 
 shape = None
 geo = None
@@ -87,18 +152,18 @@ def main():
     node = hou.pwd()
     geo = node.geometry()
     geo.addAttrib(hou.attribType.Point, "st", (0.0, 0.0))
-    prim = geo.prims()[0]
     scale = node.evalParm("scale")
-
-    points = [hou.Vector2(0.0, 0.0), hou.Vector2(0.0, 0.6),
-              hou.Vector2(0.1, 0.6), hou.Vector2(0.1, 0.0)]
+    seed = node.evalParm("seed")
 
     kill = []
+    types = [TShapeV, TShapeH, Stripe]
     for prim in geo.prims():
-        for i in range(1):
-            shape = Shape(points[:], prim)
+        random.seed(seed + prim.number())
+        for i in range(10):
+            shape_type = random.choice(types)
+            shape = shape_type(prim, flip=random.choice((True, False)))
             shape.move_to_pos(hou.Vector2(random.random(), random.random()))
-            shape.scale(hou.hmath.fit01(hou.hmath.rand(i), 0.2, 0.6))
+            shape.scale(hou.hmath.fit01(hou.hmath.rand(i), 0.05, 0.5))
             shape.place()
             shape.build_poly()
         kill.append(prim)
