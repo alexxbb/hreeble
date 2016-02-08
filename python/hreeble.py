@@ -43,8 +43,6 @@ class Shape(object):
         for i in range(len(self.coords)):
             for j in range(len(self.coords[i])):
                 _tmp = self.coords[i][j] + (self.coords[i][j] - pivot) * (val - 1)
-                _tmp[0] = max(min(_tmp[0], 1.0), 0.0)
-                _tmp[1] = max(min(_tmp[1], 1.0), 0.0)
                 self.coords[i][j] = _tmp
 
     def move_by_vec(self, vec):
@@ -56,7 +54,7 @@ class Shape(object):
         vec = new_pos - self.pivot()
         self.move_by_vec(vec)
 
-    def place(self):
+    def bounds_intersection(self):
         offset = hou.Vector2(0.0, 0.0)
         sign = lambda x: int(x > 0)
         bbox_min, bbox_max = self.bbox()
@@ -69,10 +67,22 @@ class Shape(object):
             offset += hou.Vector2((sign(bbox_max[0]) - bbox_max[0]), 0.0)
         if bbox_max[1] > 1.0 or bbox_max[1] < 0.0:
             offset += hou.Vector2(0.0, (sign(bbox_max[1]) - bbox_max[1]))
+        return offset
 
+    def place(self):
+        offset = self.bounds_intersection()
         if offset.length():
             offset *= 1.1
             self.move_by_vec(offset)
+
+        if self.bounds_intersection().length() != 0.0:
+            for i in range(len(self.coords)):
+                for j in range(len(self.coords[i])):
+                    _tmp = self.coords[i][j]
+                    _tmp[0] = max(min(_tmp[0], 1.0), 0.0)
+                    _tmp[1] = max(min(_tmp[1], 1.0), 0.0)
+                    self.coords[i][j] = _tmp
+
 
     def build_shape(self, height=0.1):
         def build_poly(*points):
@@ -120,6 +130,23 @@ class StripeV(Shape):
         super(StripeV, self).__init__(coords=coords, prim=prim)
 
 
+class StripeH(Shape):
+    def __init__(self, prim, num=1, flip=False):
+        subshape = [hou.Vector2(0.0, 0.0), hou.Vector2(0.0, 0.1),
+                    hou.Vector2(1.0, 0.1), hou.Vector2(1.0, 0.0)]
+        coords = [subshape]
+        if num <= 3:
+            for i in range(1, num):
+                step = i/8.0
+                sub = subshape[:]
+                for j in range(len(sub)):
+                    _tmp = hou.Vector2(sub[j])
+                    _tmp[1] += step
+                    sub[j] = _tmp
+                coords.append(sub)
+        super(StripeH, self).__init__(coords=coords, prim=prim)
+
+
 class TShapeH(Shape):
     def __init__(self, prim, flip=False, **kwargs):
         coords = [[hou.Vector2(0.0, 0.0),
@@ -154,6 +181,13 @@ class TShapeV(Shape):
         super(TShapeV, self).__init__(coords=coords, prim=prim)
 
 
+class Square(Shape):
+    def __init__(self, prim, flip=False, **kwargs):
+        coords = [[hou.Vector2(0.25, 0.25), hou.Vector2(0.25, 0.75),
+                   hou.Vector2(0.75, 0.75), hou.Vector2(0.75, 0.25)]]
+        super(Square, self).__init__(coords=coords, prim=prim)
+
+
 def extrude_prim(prim, height, inset=0.1):
     global old_prims
     def build_prim(*points):
@@ -165,15 +199,17 @@ def extrude_prim(prim, height, inset=0.1):
     primP = hou.Vector3(prim.attribValueAtInterior("P", 0.5, 0.5))
     center = primP + primN * height
     point_pairs = []
+    top_points = []
     for vt in prim.vertices():
         new_pt = geo.createPoint()
+        top_points.append(new_pt)
         new_pt_pos = vt.point().position() + primN * height
         inset_dir = (center - new_pt_pos).normalized()
         new_pt_pos += inset_dir * inset
         new_pt.setPosition(new_pt_pos)
         point_pairs.append((vt.point(), new_pt))
     point_pairs.append(point_pairs[0])
-    top_prim = build_prim(point_pairs[0][1], point_pairs[1][1], point_pairs[2][1], point_pairs[3][1])
+    top_prim = build_prim(*top_points)
     for i in range(len(prim.vertices())):
         build_prim(point_pairs[i][0],
                    point_pairs[i+1][0],
@@ -193,21 +229,23 @@ def split_prim(geo, prim, dir=None):
         return poly
 
     points = [vt.point() for vt in prim.vertices()]
-    tvec = points[1].position() - points[0].position()
-    svec = points[3].position() - points[0].position()
 
     if dir is None:
         dir = random.randint(0, 1)
     new_pt0 = geo.createPoint()
     new_pt1 = geo.createPoint()
     if dir == 0:
-        new_pt0.setPosition(points[0].position() + svec * 0.5)
-        new_pt1.setPosition(points[1].position() + svec * 0.5)
+        svec0 = points[3].position() - points[0].position()
+        svec1 = points[2].position() - points[1].position()
+        new_pt0.setPosition(points[0].position() + svec0 * 0.5)
+        new_pt1.setPosition(points[1].position() + svec1 * 0.5)
         poly1 = build_poly(points[0], points[1], new_pt1, new_pt0)
         poly2 = build_poly(new_pt0, new_pt1, points[2], points[3])
     else:
-        new_pt0.setPosition(points[0].position() + tvec * 0.5)
-        new_pt1.setPosition(points[3].position() + tvec * 0.5)
+        tvec0 = points[1].position() - points[0].position()
+        tvec1 = points[2].position() - points[3].position()
+        new_pt0.setPosition(points[0].position() + tvec0 * 0.5)
+        new_pt1.setPosition(points[3].position() + tvec1 * 0.5)
         poly1 = build_poly(points[0], new_pt0, new_pt1, points[3])
         poly2 = build_poly(new_pt0, points[1], points[2], new_pt1)
     return poly1, poly2
@@ -236,17 +274,20 @@ def main():
     density = node.evalParm("density")
     height = node.evalParmTuple("height")
 
-    types = [TShapeV, TShapeH, StripeV]
+    types = [TShapeV, TShapeH, StripeV, StripeH, Square]
     for orig_prim in geo.prims():
-        splitted_prims = divide(geo, orig_prim)
+        if len(orig_prim.vertices()) == 4:
+            splitted_prims = divide(geo, orig_prim)
+        else:
+            splitted_prims = [orig_prim]
         for splitted_prim in splitted_prims:
-            top_prim = extrude_prim(splitted_prim, hou.hmath.fit01(random.random(), 0.05, 0.2), 0.02)
+            top_prim = extrude_prim(splitted_prim, hou.hmath.fit01(random.random(), 0.05, 0.25), 0.04)
             for i in range(density):
-                random.seed(seed + top_prim.number() + i)
+                random.seed(seed + top_prim.number() + i*1000)
                 shape_type = random.choice(types)
                 shape = shape_type(top_prim, flip=random.choice((True, False)), num=random.randint(1, 3))
                 shape.move_to_pos(hou.Vector2(random.random(), random.random()))
-                shape.scale(hou.hmath.fit01(hou.hmath.rand(i), size[0], size[1]))
+                shape.scale(hou.hmath.fit01(random.random(), size[0], size[1]))
                 shape.place()
                 shape.build_shape(hou.hmath.fit01(random.random(), height[0], height[1]))
 

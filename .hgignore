@@ -4,3 +4,14 @@ syntax: glob
 *.pyo
 *.pyd
 *back*
+*.suo
+*.db
+*.opendb
+*.sdf
+*sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+img\*
+hdk\hreeble\x64\*
+render\*
