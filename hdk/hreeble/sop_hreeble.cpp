@@ -4,6 +4,7 @@
 #include <OP/OP_AutoLockInputs.h>
 #include <UT/UT_ValArray.h>
 #include <UT/UT_Vector2.h>
+#include <UT/UT_Interrupt.h>
 #include <SYS/SYS_Math.h>
 #include <GU/GU_Detail.h>
 #include <GU/GU_PolyExtrude.h>
@@ -15,17 +16,39 @@ typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
 
 static PRM_Name prm_names[] = { PRM_Name("panel_height", "Panel Height"),
-								PRM_Name("panel_inset", "Panel Inset") };
+								PRM_Name("panel_inset", "Panel Inset"), 
+								PRM_Name("elem_density", "Elements Density"),
+								PRM_Name("elem_scale", "Element Scale"),
+								PRM_Name("elem_height", "Element Height"),
+								PRM_Name("elem_shapes", "Element Shapes")};
 
 static PRM_Default seed_def(12345);
-static PRM_Default inset_def(0.05);
+static PRM_Default inset_def(0.1);
 static PRM_Default panel_height_def[] = { PRM_Default(0.001), PRM_Default(1.0) };
+static PRM_Default elem_scale_def[] = { PRM_Default(0.01), PRM_Default(1.0) };
+static PRM_Default elem_height_def[] = { PRM_Default(0.1), PRM_Default(1.0) };
+static PRM_Default elem_shapes_def = PRM_Default(4);
+static PRM_Range seed_range(PRM_RANGE_RESTRICTED, 1, PRM_RANGE_UI, 45000);
 static PRM_Range panel_height_range(PRM_RANGE_RESTRICTED, 0.001, PRM_RANGE_UI, 0.1);
+static PRM_Range elem_density_range(PRM_RANGE_RESTRICTED, 1, PRM_RANGE_UI, 10);
+static PRM_Range elem_scale_range(PRM_RANGE_UI, 0.001, PRM_RANGE_UI, 1);
+static PRM_Range elem_height_range(PRM_RANGE_UI, 0.001, PRM_RANGE_UI, 1);
+
+static PRM_Item elem_shapes[] = { PRM_Item("stripev", "StripeV", "SOP_normal"),
+								  PRM_Item("stripev2", "StripeV2", "SOP_normal"),
+								  PRM_Item("stripev3", "StripeV3", "SOP_normal"), 
+								  PRM_Item(),};
+
+static PRM_ChoiceList elem_shapes_list(PRM_CHOICELIST_TOGGLE, elem_shapes);
 
 PRM_Template SOP_Hreeble::myparms[] = {
-	PRM_Template(PRM_INT, 1, &PRMseedName, &seed_def), /*seed*/
+	PRM_Template(PRM_INT, 1, &PRMseedName, &seed_def, 0, &seed_range), /*seed*/
 	PRM_Template(PRM_FLT, 1, &prm_names[1], &inset_def), /*inset*/
 	PRM_Template(PRM_FLT, 2, &prm_names[0], panel_height_def, 0, &panel_height_range), /*height*/
+	PRM_Template(PRM_INT, 1, &prm_names[2], PRMoneDefaults, 0, &elem_density_range), /*element density*/
+	PRM_Template(PRM_FLT, 2, &prm_names[3], elem_scale_def, 0, &elem_scale_range), /*element scale*/
+	PRM_Template(PRM_FLT, 2, &prm_names[4], elem_height_def, 0, &elem_height_range), /*element height*/
+	PRM_Template(PRM_ICONSTRIP, (sizeof(elem_shapes)/sizeof(PRM_Item)) - 1 , &prm_names[5], &elem_shapes_def, &elem_shapes_list),
 	PRM_Template()
 };
 
@@ -122,27 +145,16 @@ void SOP_Hreeble::divide(GEO_Primitive * prim, UT_ValArray<GEO_PrimPoly*>& resul
 	split_primitive(prim_to_split, result, (1 - dir));
 }
 
-void SOP_Hreeble::extrude(GEO_Primitive * prim, const fpreal & height, const fpreal &inset, GEO_Primitive  * result_prim)
+GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * prim, const fpreal & height, const fpreal &inset)
 {
-	auto build_prim = [this](const GA_OffsetArray &points) -> GEO_PrimPoly*{
+	auto build_prim = [this](const GA_OffsetArray &points) -> GEO_Primitive*{
 		auto prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
 		for (const auto pt_off : points) {
 			prim->appendVertex(pt_off);
 		}
 		prim->close();
-		return prim;
+		return static_cast<GEO_Primitive*>(prim);
 	};
-	//GU_PolyExtrudeParms parms;
-	//parms.setInset(inset, 0);
-	//parms.myOutputBack = false;
-	//GU_PolyExtrude extrude(gdp);
-	//extrude.extrude(parms);
-
-	//work_group->clear();
-	//work_group->add(prim);
-	//auto extrude = GU_PolyExtrude2(gdp, work_group);
-	//extrude.setInset(inset);
-	//extrude.extrude(height);
 
 	UT_Vector3 primN = prim->computeNormal();
 	UT_Vector4 primP;
@@ -177,41 +189,79 @@ void SOP_Hreeble::extrude(GEO_Primitive * prim, const fpreal & height, const fpr
 		prim_points.append(pair1.mySecond);
 		build_prim(prim_points);
 	}
-	result_prim = (GEO_Primitive*)build_prim(front_points);
+	auto top_prim = build_prim(front_points);
 	kill_prims.append(prim);
+	return top_prim;
 }
 
 OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 {
-	//auto elem = make_element(ElementTypes::STRIPE);
-	my_seed = SeedPRM();
+	uint seed_parm = SeedPRM();
 	fpreal64 panel_height_parm[2];
+	fpreal64 elem_scale_parm[2];
+	fpreal64 elem_height_parm[2];
 	PanelHeightPRM(panel_height_parm);
+	ElemScalePRM(elem_scale_parm);
+	ElemHeightPRM(elem_height_parm);
 	fpreal panel_inset_parm = PanelInsetPRM();
+	uint element_density = ElemDensityPRM();
+	uint shapes_parm = SelectedShapesPRM();
+
+	UT_ValArray<uint> selected_shapes;
+	for (uint i = 0; i < 3; i++) {
+		if ((shapes_parm & (0x01 << i)) != 0) {
+			selected_shapes.append(0x01 << i);
+		}
+	}
+
 	OP_AutoLockInputs inputs(this);
 	if (inputs.lock(ctx) >= UT_ERROR_ABORT)
 		return error();
 
 	gdp->clearAndDestroy();
 	duplicateSource(0, ctx);
-	work_group = gdp->newPrimitiveGroup("temp", 1);
 
+	UT_AutoInterrupt boss("Cooking hreeble.....");
+	if (boss.wasInterrupted())
+		return error();
+
+	work_group = gdp->newPrimitiveGroup("temp", 1);
 	ph = gdp->getP();
 	GEO_Primitive *source_prim;
-	UT_ValArray<GEO_PrimPoly*> new_prims;
+	UT_ValArray<GEO_PrimPoly*> pannels_prims;
 	kill_prims.clear();
 
+	uint num_selected_shapes = selected_shapes.entries();
 	fpreal panel_height = 0.0;
+	my_seed = seed_parm;
 	for (GA_Iterator it(gdp->getPrimitiveRange()); !it.atEnd(); ++it) {
-		my_seed += gdp->primitiveIndex(*it);
 		source_prim = static_cast<GEO_Primitive*>(gdp->getPrimitive(*it));
-		new_prims.clear();
+		pannels_prims.clear();
+		if (boss.wasInterrupted())
+			break;
 		if (source_prim->getVertexCount() == 4)
-			divide(source_prim, new_prims);
-		for (auto prim : new_prims) {
-			panel_height = SYSfit01((fpreal64)SYSrandom(my_seed), panel_height_parm[0], panel_height_parm[1]);
-			GEO_Primitive *extruded_front_prim = 0;
-			extrude(static_cast<GEO_Primitive*>(prim), panel_height, panel_inset_parm, extruded_front_prim);
+			// Divide source prim into panels
+			divide(source_prim, pannels_prims);
+		else if (source_prim->getVertexCount() == 3)
+			pannels_prims.append(static_cast<GEO_PrimPoly*>(source_prim));
+		for (auto prim : pannels_prims) {
+			panel_height = SYSfit01((fpreal64)SYSfastRandom(my_seed), panel_height_parm[0], panel_height_parm[1]);
+			// Extrude panel
+			GEO_Primitive *extruded_front_prim = extrude(static_cast<GEO_Primitive*>(prim), panel_height, panel_inset_parm);
+			if (num_selected_shapes != 0) {
+				UT_Vector3 primN = extruded_front_prim->computeNormal();
+				for (uint i = 0; i < element_density; i++) {
+					uint elem_seed = seed_parm + extruded_front_prim->getMapIndex() + i * 1000;
+					uint shape_index = (int)SYSfloor((fpreal64)SYSfastRandom(elem_seed) * num_selected_shapes);
+					ElementTypes type = static_cast<ElementTypes>(selected_shapes(shape_index));
+					fpreal elem_height = SYSfit01((fpreal64)SYSfastRandom(elem_seed), elem_height_parm[0], elem_height_parm[1]);
+					UT_Vector2R elem_pos(SYSfastRandom(elem_seed), SYSfastRandom(elem_seed));
+					fpreal elem_scale = SYSfit01((fpreal64)SYSfastRandom(elem_seed), elem_scale_parm[0], elem_scale_parm[1]);
+					auto element = make_element(type);
+					element->transform(elem_pos, elem_scale);
+					element->build(gdp, extruded_front_prim, primN, elem_height);
+				}
+			}
 		}
 	}
 
