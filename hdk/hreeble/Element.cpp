@@ -5,13 +5,16 @@
 typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
 
-Element::Element()
+Element::Element(ElementTypes type, const short &direction)
+	:type(type), direction(direction)
 {
 }
 
-Element::Element(SubElem elem)
+Element::Element(SubElem elem, ElementTypes type, const short &direction)
 {
 	subelements.append(elem);
+	this->type = type;
+	this->direction = direction;
 }
 
 
@@ -99,8 +102,20 @@ void Element::move_by_vec(const UT_Vector2R & vec)
 }
 
 
-void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale)
+void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const bool flip)
 {
+	// Flip
+	if (flip) {
+		if (type == ElementTypes::TSHAPE) {
+			for (auto &subelem : subelements) {
+				subelem.coords.reverse();
+				for (auto &pt : subelem.coords) {
+					pt(direction) = 1 - pt(direction);
+				}
+			}
+		}
+		//subelements(0).coords.reverse();
+	}
 	// Move
 	auto vec = new_pos - this->pivot();
 	move_by_vec(vec);
@@ -144,13 +159,14 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 		GA_Offset offset_block = gdp->appendPointBlock(subelem.coords.entries() * 2);
 		GA_OffsetArray front_offsets;
 		UT_ValArray<UT_Pair<GA_Offset, GA_Offset>> pairs;
-		for (exint i = 0; i < subelem.coords.entries(); i++) {
+		exint num_coords = subelem.coords.entries();
+		for (exint i = 0; i < num_coords; i++) {
 			const UT_Vector2R &coord = subelem.coords(i);
 			UT_Vector4 pos_b;
 			UT_Vector3 pos_t;
 
 			GA_Offset pt_off1 = offset_block + i;
-			GA_Offset pt_off2 = offset_block + i + 4;
+			GA_Offset pt_off2 = offset_block + i + num_coords;
 			prim->evaluateInteriorPoint(pos_b, coord.x(), coord.y());
 			pos_t = pos_b + primN * height;
 
@@ -189,36 +205,81 @@ exint Element::num_points()
 }
 
 
-std::unique_ptr<Element> make_element(const ElementTypes &elem_type) 
+std::unique_ptr<Element> make_element(const ElementTypes &elem_type, const short &dir) 
 {
-	std::unique_ptr<Element> w(new Element);
+	std::unique_ptr<Element> w(new Element(elem_type, dir));
 	uint num_elems = 1;
-	if (elem_type <= ElementTypes::STRIPEV3)
+	if (elem_type <= ElementTypes::STRIPE3)
 	{
 		switch (elem_type)
 		{
-		case ElementTypes::STRIPEV2:
+		case ElementTypes::STRIPE2:
 			num_elems = 2;
 			break;
-		case ElementTypes:: STRIPEV3:
+		case ElementTypes:: STRIPE3:
 			num_elems = 3;
 			break;
 		default:
 			break;
 		}
 
+		V2R pt0, pt1, pt2, pt3;
+		if (dir == 0) {
+			pt0 = V2R(0.0, 0.0);
+			pt1 = V2R(0.0, 1.0);
+			pt2 = V2R(0.1, 1.0);
+			pt3 = V2R(0.1, 0.0);
+		}
+		else {
+			pt0 = V2R(0.0, 0.0);
+			pt1 = V2R(0.0, 0.1);
+			pt2 = V2R(1.0, 0.1);
+			pt3 = V2R(1.0, 0.0);
+		}
+
 		for (uint i = 0; i < num_elems; i++) {
 			auto elem = SubElem();
 			fpreal step = i / 8.0;
-			elem.coords.append(UT_Vector2R(step, 0.0));
-			elem.coords.append(UT_Vector2R(step, 1.0));
-			elem.coords.append(UT_Vector2R(0.1 + step, 1.0));
-			elem.coords.append(UT_Vector2R(0.1 + step, 0.0));
+			auto new_pt0 = pt0;
+			new_pt0(dir) += step;
+			elem.coords.append(new_pt0);
+			auto new_pt1 = pt1;
+			new_pt1(dir) += step;
+			elem.coords.append(new_pt1);
+			auto new_pt2 = pt2;
+			new_pt2(dir) += step;
+			elem.coords.append(new_pt2);
+			auto new_pt3 = pt3;
+			new_pt3(dir) += step;
+			elem.coords.append(new_pt3);
 			w->append(elem);
 		}
 	}
-	else if (elem_type == ElementTypes::STRIPEV)
+	else if (elem_type == ElementTypes::TSHAPE)
 	{
+		auto elem = SubElem();
+		if (dir == 0) {
+			elem.coords.append(V2R(0.0, 0.0));
+			elem.coords.append(V2R(0.0, 0.99));
+			elem.coords.append(V2R(0.33, 0.99));
+			elem.coords.append(V2R(0.33, 0.66));
+			elem.coords.append(V2R(0.66, 0.66));
+			elem.coords.append(V2R(0.66, 0.33));
+			elem.coords.append(V2R(0.33, 0.33));
+			elem.coords.append(V2R(0.33, 0.0));
+		}
+		else {
+			elem.coords.append(V2R(0.0, 0.0));
+			elem.coords.append(V2R(0.0, 0.33));
+			elem.coords.append(V2R(0.33, 0.33));
+			elem.coords.append(V2R(0.33, 0.66));
+			elem.coords.append(V2R(0.66, 0.66));
+			elem.coords.append(V2R(0.66, 0.33));
+			elem.coords.append(V2R(0.99, 0.33));
+			elem.coords.append(V2R(0.99, 0.0));
+		}
+		w->append(elem);
+
 	}
 	return w;
 }

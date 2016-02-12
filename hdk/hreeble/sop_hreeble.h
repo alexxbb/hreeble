@@ -14,8 +14,8 @@ public:
 	~SOP_Hreeble();
 	static OP_Node *creator(OP_Network*, const char*, OP_Operator*);
 	OP_ERROR cookMySop(OP_Context &ctx);
-	void split_primitive(GEO_Primitive *prim, UT_ValArray<GEO_PrimPoly*> &result, const unsigned short dir = 0);
-	void divide(GEO_Primitive *prim, UT_ValArray<GEO_PrimPoly*> &result);
+	void split_primitive(GEO_Primitive *prim, UT_ValArray<GEO_Primitive*> &result, const unsigned short dir = 0);
+	void divide(GEO_Primitive *prim, UT_ValArray<GEO_Primitive*> &result);
 	GEO_Primitive* extrude(GEO_Primitive *prim, const fpreal &height, const fpreal &inset);
 	static PRM_Template myparms[];
 
@@ -25,6 +25,7 @@ public:
 private:
 	uint SeedPRM() { return (uint)evalInt("seed", 0, 0); }
 	uint ElemDensityPRM() { return (uint)evalInt("elem_density", 0, 0); }
+	uint GeneratePanelsPRM() { return (uint)evalInt("gen_panels", 0, 0); }
 	fpreal64 PanelInsetPRM() { return evalFloat("panel_inset", 0, 0.0); }
 	void PanelHeightPRM(fpreal64 vals[]) { evalFloats("panel_height", vals, 0.0); }
 	void ElemScalePRM(fpreal64 vals[]) { evalFloats("elem_scale", vals, 0.0); }
