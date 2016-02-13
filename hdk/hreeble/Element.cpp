@@ -5,8 +5,8 @@
 typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
 
-Element::Element(ElementTypes type, const short &direction)
-	:type(type), direction(direction)
+Element::Element(ElementTypes type, const short &direction, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp)
+	:type(type), direction(direction), elem_group(elem_grp), elem_front_group(elem_front_grp)
 {
 }
 
@@ -114,7 +114,6 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 				}
 			}
 		}
-		//subelements(0).coords.reverse();
 	}
 	// Move
 	auto vec = new_pos - this->pivot();
@@ -186,9 +185,15 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 			prim_points.append(pair2.myFirst);
 			prim_points.append(pair2.mySecond);
 			prim_points.append(pair1.mySecond);
-			build_prim(prim_points);
+			auto prim = build_prim(prim_points);
+			if (elem_group)
+				elem_group->add(prim);
 		}
 		auto front_prim = build_prim(front_offsets);
+		if (elem_front_group){
+			elem_front_group->add(front_prim);
+			elem_group->add(front_prim);
+		}
 		front_offsets.clear();
 		pairs.clear();
 	}
@@ -205,9 +210,10 @@ exint Element::num_points()
 }
 
 
-std::unique_ptr<Element> make_element(const ElementTypes &elem_type, const short &dir) 
+std::unique_ptr<Element> 
+make_element(const ElementTypes &elem_type, const short &dir, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp) 
 {
-	std::unique_ptr<Element> w(new Element(elem_type, dir));
+	std::unique_ptr<Element> w(new Element(elem_type, dir, elem_grp, elem_front_grp));
 	uint num_elems = 1;
 	if (elem_type <= ElementTypes::STRIPE3)
 	{
@@ -279,7 +285,37 @@ std::unique_ptr<Element> make_element(const ElementTypes &elem_type, const short
 			elem.coords.append(V2R(0.99, 0.0));
 		}
 		w->append(elem);
+	}
 
+	else if (elem_type == ElementTypes::SQUARE)
+	{
+		auto elem = SubElem();
+		elem.coords.append(V2R(0.0, 0.0));
+		elem.coords.append(V2R(0.0, 0.5));
+		elem.coords.append(V2R(0.5, 0.5));
+		elem.coords.append(V2R(0.5, 0.0));
+		w->append(elem);
+	}
+	else if (elem_type == ElementTypes::RSHAPE)
+	{
+		auto elem = SubElem();
+		if (dir == 0) {
+			elem.coords.append(V2R(0.0, 0.0));
+			elem.coords.append(V2R(0.0, 0.66));
+			elem.coords.append(V2R(0.33, 0.66));
+			elem.coords.append(V2R(0.33, 0.33));
+			elem.coords.append(V2R(0.99, 0.33));
+			elem.coords.append(V2R(0.99, 0.0));
+		}
+		else {
+			elem.coords.append(V2R(0.0, 0.0));
+			elem.coords.append(V2R(0.0, 0.99));
+			elem.coords.append(V2R(0.66, 0.99));
+			elem.coords.append(V2R(0.66, 0.66));
+			elem.coords.append(V2R(0.33, 0.66));
+			elem.coords.append(V2R(0.33, 0.0));
+		}
+		w->append(elem);
 	}
 	return w;
 }

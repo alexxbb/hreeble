@@ -22,7 +22,9 @@ static PRM_Name prm_names[] = { PRM_Name("panel_height", "Panel Height"),
 								PRM_Name("elem_scale", "Element Scale"),
 								PRM_Name("elem_height", "Element Height"),
 								PRM_Name("elem_shapes", "Element Shapes"),
-								PRM_Name("gen_panels", "Generate Panels"),};
+								PRM_Name("gen_panels", "Generate Panels"),
+								PRM_Name("source_groups", "Source Prim Group"),
+								PRM_Name("elem_groups", "Create Output Groups"),};
 
 static PRM_Default seed_def(12345);
 static PRM_Default inset_def(0.01);
@@ -36,16 +38,19 @@ static PRM_Range elem_density_range(PRM_RANGE_RESTRICTED, 1, PRM_RANGE_UI, 10);
 static PRM_Range elem_scale_range(PRM_RANGE_UI, 0.001, PRM_RANGE_UI, 1);
 static PRM_Range elem_height_range(PRM_RANGE_UI, 0.001, PRM_RANGE_UI, 1);
 
-static PRM_Item elem_shapes[] = { PRM_Item("stripev", "StripeV", "SOP_normal"),
-								  PRM_Item("stripev2", "StripeV2", "SOP_normal"),
-								  PRM_Item("stripev3", "StripeV3", "SOP_normal"), 
-								  PRM_Item("tshape", "TShape", "SOP_normal"), 
+static PRM_Item elem_shapes[] = { PRM_Item("stripev", "StripeV", "hr_stripe1"),
+								  PRM_Item("stripev2", "StripeV2", "hr_stripe2"),
+								  PRM_Item("stripev3", "StripeV3", "hr_stripe3"), 
+								  PRM_Item("tshape", "TShape", "hr_tshape"), 
+								  PRM_Item("rshape", "RShape", "hr_rshape"), 
+								  PRM_Item("square", "Square", "hr_square"), 
 								  PRM_Item(),};
 
 static PRM_ChoiceList elem_shapes_list(PRM_CHOICELIST_TOGGLE, elem_shapes);
 static uint prm_num_shapes = sizeof(elem_shapes) / sizeof(PRM_Item);
 
 PRM_Template SOP_Hreeble::myparms[] = {
+	PRM_Template(PRM_STRING, 1, &prm_names[7], 0, &SOP_Node::primGroupMenu, 0, 0, SOP_Node::getGroupSelectButton(GA_GROUP_PRIMITIVE)),
 	PRM_Template(PRM_INT, 1, &PRMseedName, &seed_def, 0, &seed_range), /*seed*/
 	PRM_Template(PRM_TOGGLE_E, 1, &prm_names[6], PRMoneDefaults), /*generate panels*/
 	PRM_Template(PRM_FLT, 1, &prm_names[1], &inset_def), /*inset*/
@@ -54,8 +59,22 @@ PRM_Template SOP_Hreeble::myparms[] = {
 	PRM_Template(PRM_FLT, 2, &prm_names[3], elem_scale_def, 0, &elem_scale_range), /*element scale*/
 	PRM_Template(PRM_FLT, 2, &prm_names[4], elem_height_def, 0, &elem_height_range), /*element height*/
 	PRM_Template(PRM_ICONSTRIP, 1 , &prm_names[5], &elem_shapes_def, &elem_shapes_list),
+	PRM_Template(PRM_TOGGLE_E, 1 , &prm_names[8], PRMzeroDefaults),
 	PRM_Template()
 };
+
+bool SOP_Hreeble::updateParmsFlags() {
+	bool changed = SOP_Node::updateParmsFlags();
+	uint generate_pannels = GeneratePanelsPRM();
+	uint elem_shapes = SelectedShapesPRM();
+	changed |= enableParm("panel_height", generate_pannels);
+	changed |= enableParm("panel_inset", generate_pannels);
+	changed |= enableParm("elem_density", elem_shapes);
+	changed |= enableParm("elem_scale", elem_shapes);
+	changed |= enableParm("elem_height", elem_shapes);
+	changed |= enableParm("elem_groups", elem_shapes);
+	return changed;
+}
 
 void newSopOperator(OP_OperatorTable *table) {
 	table->addOperator(new OP_Operator(
@@ -68,7 +87,7 @@ void newSopOperator(OP_OperatorTable *table) {
 }
 
 SOP_Hreeble::SOP_Hreeble(OP_Network * net, const char * name, OP_Operator * op):
-	SOP_Node(net, name, op), my_seed(0)
+	SOP_Node(net, name, op), my_seed(0), source_prim_group(nullptr), elements_group(nullptr), elements_front_group(nullptr)
 {
 }
 
@@ -77,6 +96,11 @@ SOP_Hreeble::~SOP_Hreeble() { }
 OP_Node * SOP_Hreeble::creator(OP_Network *net, const char *name, OP_Operator *op)
 {
 	return new SOP_Hreeble(net, name, op);
+}
+
+OP_ERROR SOP_Hreeble::cookInputGroups(OP_Context & ctx, int alone)
+{
+	return cookInputPrimitiveGroups(ctx, source_prim_group, alone);
 }
 
 void SOP_Hreeble::split_primitive(GEO_Primitive * prim, UT_ValArray<GEO_Primitive*>& result, const unsigned short dir)
@@ -220,30 +244,32 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 		}
 	}
 
+	UT_AutoInterrupt boss("Making hreeble...");
 	OP_AutoLockInputs inputs(this);
-	if (inputs.lock(ctx) >= UT_ERROR_ABORT)
+	if (error() > UT_ERROR_ABORT 
+		|| inputs.lock(ctx) >= UT_ERROR_ABORT
+		|| cookInputGroups(ctx) > UT_ERROR_ABORT 
+		|| (source_prim_group && source_prim_group->isEmpty()))
 		return error();
 
 	gdp->clearAndDestroy();
 	duplicateSource(0, ctx);
-
-	UT_AutoInterrupt boss("Cooking hreeble.....");
-	if (boss.wasInterrupted())
-		return error();
-
-	work_group = gdp->newPrimitiveGroup("temp", 1);
 	ph = gdp->getP();
-	GEO_Primitive *source_prim;
 	UT_ValArray<GEO_Primitive*> panel_prims;
 	UT_ValArray<GEO_Primitive*> top_prims;
 	kill_prims.clear();
-
 	uint num_selected_shapes = selected_shapes.entries();
 	if (num_selected_shapes == 0 && generate_panels == 0) return error();
+	elements_group = nullptr;
+	elements_front_group = nullptr;
+	if (CreateGroupsPRM() != 0) {
+		elements_group = gdp->newPrimitiveGroup("elements");
+		elements_front_group = gdp->newPrimitiveGroup("elements_front");
+	}
 	fpreal panel_height = 0.0;
 	my_seed = seed_parm;
-	for (GA_Iterator it(gdp->getPrimitiveRange()); !it.atEnd(); ++it) {
-		source_prim = static_cast<GEO_Primitive*>(gdp->getPrimitive(*it));
+	for (GA_Iterator it(gdp->getPrimitiveRange(source_prim_group)); !it.atEnd(); ++it) {
+		GEO_Primitive *source_prim = static_cast<GEO_Primitive*>(gdp->getPrimitive(*it));
 		top_prims.clear();
 		if (boss.wasInterrupted())
 			break;
@@ -271,7 +297,7 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 					fpreal elem_height = SYSfit01((fpreal64)SYSfastRandom(elem_seed), elem_height_parm[0], elem_height_parm[1]);
 					UT_Vector2R elem_pos(SYSfastRandom(elem_seed), SYSfastRandom(elem_seed));
 					fpreal elem_scale = SYSfit01((fpreal64)SYSfastRandom(elem_seed), elem_scale_parm[0], elem_scale_parm[1]);
-					auto element = make_element(type, (short)hreeble::rand_bool(elem_seed));
+					auto element = make_element(type, (short)hreeble::rand_bool(elem_seed), elements_group, elements_front_group);
 					element->transform(elem_pos, elem_scale, hreeble::rand_bool(elem_seed + 11234));
 					element->build(gdp, prim, primN, elem_height);
 				}
