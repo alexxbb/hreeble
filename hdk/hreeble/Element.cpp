@@ -1,6 +1,7 @@
 #include "Element.h"
 #include <GEO/GEO_PrimPoly.h>
 #include <UT/UT_Pair.h>
+#include <SYS/SYS_Math.h>
 
 typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
@@ -106,7 +107,7 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 {
 	// Flip
 	if (flip) {
-		if (type == ElementTypes::TSHAPE) {
+		if (type == ElementTypes::TSHAPE || type == ElementTypes::RSHAPE) {
 			for (auto &subelem : subelements) {
 				subelem.coords.reverse();
 				for (auto &pt : subelem.coords) {
@@ -116,7 +117,15 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 		}
 	}
 	// Move
-	auto vec = new_pos - this->pivot();
+	UT_Vector2R vec;
+	if (type == ElementTypes::TRIANGLE) {
+		UT_Vector2R pp;
+		pp(0) = SYSfit01(new_pos(0), 0.0, 1 - new_pos(1));
+		pp(1) = SYSfit01(new_pos(1), 0.0, 1 - new_pos(0));
+		vec = pp - this->pivot();
+	}
+	else
+		vec = new_pos - this->pivot();
 	move_by_vec(vec);
 	UT_Vector2R pivot = this->pivot();
 	// Scale
@@ -128,14 +137,14 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 	// Place
 	V2R offset = bounds_intersection();
 	if (offset.length() != 0) {
-		offset *= 1.1;
+		offset *= 1.2;
 		move_by_vec(offset);
 	}
 	if (bounds_intersection().length() != 0) {
 		for (auto &subelem : subelements) {
 			for (auto &pt : subelem.coords) {
-				pt(0) = SYSmax(SYSmin(pt.x(), 1.0), 0.0);
-				pt(1) = SYSmax(SYSmin(pt.y(), 1.0), 0.0);
+				pt(0) = SYSmax(SYSmin(pt.x(), 0.99), 0.01);
+				pt(1) = SYSmax(SYSmin(pt.y(), 0.99), 0.01);
 			}
 		}
 	}
@@ -315,6 +324,14 @@ make_element(const ElementTypes &elem_type, const short &dir, GA_PrimitiveGroup 
 			elem.coords.append(V2R(0.33, 0.66));
 			elem.coords.append(V2R(0.33, 0.0));
 		}
+		w->append(elem);
+	}
+	else if (elem_type == ElementTypes::TRIANGLE)
+	{
+		auto elem = SubElem();
+		elem.coords.append(V2R(0.0, 0.0));
+		elem.coords.append(V2R(0.0, 0.5));
+		elem.coords.append(V2R(0.5, 0.0));
 		w->append(elem);
 	}
 	return w;

@@ -7,8 +7,6 @@
 #include <UT/UT_Interrupt.h>
 #include <SYS/SYS_Math.h>
 #include <GU/GU_Detail.h>
-#include <GU/GU_PolyExtrude.h>
-#include <GU/GU_PolyExtrude2.h>
 #include "sop_hreeble.h"
 #include "Element.h"
 #include "misc.h"
@@ -24,7 +22,8 @@ static PRM_Name prm_names[] = { PRM_Name("panel_height", "Panel Height"),
 								PRM_Name("elem_shapes", "Element Shapes"),
 								PRM_Name("gen_panels", "Generate Panels"),
 								PRM_Name("source_groups", "Source Prim Group"),
-								PRM_Name("elem_groups", "Create Output Groups"),};
+								PRM_Name("elem_groups", "Create Output Groups"),
+								PRM_Name("convex", "Convex Geometry"),};
 
 static PRM_Default seed_def(12345);
 static PRM_Default inset_def(0.01);
@@ -35,8 +34,8 @@ static PRM_Default elem_shapes_def = PRM_Default(4);
 static PRM_Range seed_range(PRM_RANGE_RESTRICTED, 1, PRM_RANGE_UI, 45000);
 static PRM_Range panel_height_range(PRM_RANGE_RESTRICTED, 0.001, PRM_RANGE_UI, 0.1);
 static PRM_Range elem_density_range(PRM_RANGE_RESTRICTED, 1, PRM_RANGE_UI, 10);
-static PRM_Range elem_scale_range(PRM_RANGE_UI, 0.001, PRM_RANGE_UI, 1);
-static PRM_Range elem_height_range(PRM_RANGE_UI, 0.001, PRM_RANGE_UI, 1);
+static PRM_Range elem_scale_range(PRM_RANGE_RESTRICTED, 0.0, PRM_RANGE_UI, 1);
+static PRM_Range elem_height_range(PRM_RANGE_UI, 0.0001, PRM_RANGE_UI, 1);
 
 static PRM_Item elem_shapes[] = { PRM_Item("stripev", "StripeV", "hr_stripe1"),
 								  PRM_Item("stripev2", "StripeV2", "hr_stripe2"),
@@ -59,7 +58,8 @@ PRM_Template SOP_Hreeble::myparms[] = {
 	PRM_Template(PRM_FLT, 2, &prm_names[3], elem_scale_def, 0, &elem_scale_range), /*element scale*/
 	PRM_Template(PRM_FLT, 2, &prm_names[4], elem_height_def, 0, &elem_height_range), /*element height*/
 	PRM_Template(PRM_ICONSTRIP, 1 , &prm_names[5], &elem_shapes_def, &elem_shapes_list),
-	PRM_Template(PRM_TOGGLE_E, 1 , &prm_names[8], PRMzeroDefaults),
+	PRM_Template(PRM_TOGGLE_E, 1, &prm_names[9], PRMoneDefaults), /*convex geometry*/
+	PRM_Template(PRM_TOGGLE_E, 1 , &prm_names[8], PRMzeroDefaults), /*create groups*/
 	PRM_Template()
 };
 
@@ -89,6 +89,7 @@ void newSopOperator(OP_OperatorTable *table) {
 SOP_Hreeble::SOP_Hreeble(OP_Network * net, const char * name, OP_Operator * op):
 	SOP_Node(net, name, op), my_seed(0), source_prim_group(nullptr), elements_group(nullptr), elements_front_group(nullptr)
 {
+	//flags().timeDep = 1;
 }
 
 SOP_Hreeble::~SOP_Hreeble() { }
@@ -225,13 +226,14 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * prim, const fpreal & height,
 
 OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 {
+	fpreal time = ctx.getTime();
 	uint seed_parm = SeedPRM();
 	fpreal64 panel_height_parm[2];
 	fpreal64 elem_scale_parm[2];
 	fpreal64 elem_height_parm[2];
-	PanelHeightPRM(panel_height_parm);
-	ElemScalePRM(elem_scale_parm);
-	ElemHeightPRM(elem_height_parm);
+	PanelHeightPRM(panel_height_parm, time);
+	ElemScalePRM(elem_scale_parm, time);
+	ElemHeightPRM(elem_height_parm, time);
 	fpreal panel_inset_parm = PanelInsetPRM();
 	uint element_density = ElemDensityPRM();
 	uint shapes_parm = SelectedShapesPRM();
@@ -255,6 +257,8 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 	gdp->clearAndDestroy();
 	duplicateSource(0, ctx);
 	ph = gdp->getP();
+	if (DoConvexPRM() == 1)
+		gdp->convex(GA_Size(4));
 	UT_ValArray<GEO_Primitive*> panel_prims;
 	UT_ValArray<GEO_Primitive*> top_prims;
 	kill_prims.clear();
@@ -291,9 +295,14 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 		if (num_selected_shapes != 0) {
 			for (const auto prim: top_prims){
 				UT_Vector3 primN = prim->computeNormal();
+				auto num_vtx = prim->getVertexCount();
+				ElementTypes type;
 				for (uint i = 0; i < element_density; i++) {
-					uint elem_seed = seed_parm + prim->getMapIndex() + i * 12987;
-					ElementTypes type = static_cast<ElementTypes>(hreeble::rand_choice(selected_shapes, elem_seed));
+					uint elem_seed = seed_parm + prim->getMapIndex() * 130145 + i * 12987;
+					if (num_vtx == 3)
+						type = ElementTypes::TRIANGLE;
+					else
+						type = static_cast<ElementTypes>(hreeble::rand_choice(selected_shapes, elem_seed));
 					fpreal elem_height = SYSfit01((fpreal64)SYSfastRandom(elem_seed), elem_height_parm[0], elem_height_parm[1]);
 					UT_Vector2R elem_pos(SYSfastRandom(elem_seed), SYSfastRandom(elem_seed));
 					fpreal elem_scale = SYSfit01((fpreal64)SYSfastRandom(elem_seed), elem_scale_parm[0], elem_scale_parm[1]);

@@ -15,6 +15,7 @@ enum class ElementTypes {
 	TSHAPE  = 0x0008,
 	RSHAPE  = 0x0010,
 	SQUARE  = 0x0020,
+	TRIANGLE = 0x0030,
 };
 
 
