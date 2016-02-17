@@ -1,5 +1,6 @@
 OS_NAME := $(shell uname -s)
 SOURCES = hreeble/Element.cpp hreeble/sop_hreeble.cpp
+ICONS = Icons/*.svg
 
 ifeq ($(OS_NAME),Darwin)
 	INSTDIR = /Users/$(USER)/Library/Preferences/houdini/15.0
@@ -15,9 +16,8 @@ CXXFLAGS+=-std=c++11
 
 include $(HFS)/toolkit/makefiles/Makefile.gnu
 
-# all:	install clean
-# install:	default	clean
-# 	@if [ ! -d $(INSTDIR)/dso ]; then mkdir $(INSTDIR)/dso; fi
-# 	@mv $(DSONAME) $(INSTDIR)/dso
-# clean:
-# 	@rm hreeble/*.o
+install:
+	@if [ ! -d $(INSTDIR)/dso ]; then mkdir $(INSTDIR)/dso; fi
+	@cp $(DSONAME) $(INSTDIR)/dso
+	@mkdir -p $(INSTDIR)/config/Icons
+	@cp $(ICONS) $(INSTDIR)/config/Icons

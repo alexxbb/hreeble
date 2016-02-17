@@ -9,8 +9,9 @@ syntax: glob
 *.opendb
 *.sdf
 *sln
+*.o
+*.dylib
 *.hip*
-*.svg
 *.orig
 *.vcxproj
 *.vcxproj.filters
