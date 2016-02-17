@@ -10,7 +10,6 @@ syntax: glob
 *.sdf
 *sln
 *.hip*
-*.svg
 *.orig
 *.vcxproj
 *.vcxproj.filters
