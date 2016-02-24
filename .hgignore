@@ -16,6 +16,7 @@ syntax: glob
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
+python\*
 img\*
-hdk\hreeble\x64\*
+hreeble\x64\*
 render\*

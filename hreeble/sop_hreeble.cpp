@@ -7,6 +7,9 @@
 #include <UT/UT_Interrupt.h>
 #include <SYS/SYS_Math.h>
 #include <GU/GU_Detail.h>
+#include <GU/GU_PrimPoly.h>
+#include <GA/GA_ElementWrangler.h>
+#include <GEO/GEO_PolyCounts.h>
 #include "sop_hreeble.h"
 #include "Element.h"
 #include "misc.h"
@@ -104,62 +107,163 @@ OP_ERROR SOP_Hreeble::cookInputGroups(OP_Context & ctx, int alone)
 	return cookInputPrimitiveGroups(ctx, source_prim_group, alone);
 }
 
-void SOP_Hreeble::split_primitive(GEO_Primitive * prim, UT_ValArray<GEO_Primitive*>& result, const unsigned short dir)
+//void SOP_Hreeble::split_primitive(GEO_Primitive * prim, UT_ValArray<GEO_Primitive*>& result, const unsigned short dir)
+//{
+//	//auto build_prim = [this](const UT_ValArray<GA_Offset> &poffsets) -> GEO_Primitive*{
+//	//	auto new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
+//	//	for (const auto off : poffsets) {
+//	//		new_prim->appendVertex(off);
+//	//	}
+//	//	new_prim->close();
+//	//	return static_cast<GEO_Primitive*>(new_prim);
+//	//};
+//
+//	GA_Offset new_pt0 = gdp->appendPointOffset();
+//	GA_Offset new_pt1 = gdp->appendPointOffset();
+//	UT_ValArray<GA_Offset> prim_points_offsets;
+//	UT_ValArray<GA_Offset> new_prim_offsets;
+//	UT_ValArray<GA_Offset> vert_interp_offsets;
+//	
+//	GA_VertexWrangler wrangler(*gdp, *gdp, GA_AttributeFilter::selectByName("uv"));
+//	GA_Size new_vtx_num;
+//	GA_Offset new_vtx_off;
+//	GEO_PrimPoly *new_prim;
+//	auto VtxToPtOff = [&prim, this](const GA_Size &index) {return gdp->vertexPoint(prim->getVertexOffset(index)); };
+//	if (dir == 0) {
+//		auto svec0 = ph.get(VtxToPtOff(3)) - ph.get(VtxToPtOff(0));
+//		auto svec1 = ph.get(VtxToPtOff(2)) - ph.get(VtxToPtOff(1));
+//		ph.set(new_pt0, ph.get(VtxToPtOff(0)) + svec0 * 0.5);
+//		ph.set(new_pt1, ph.get(VtxToPtOff(1)) + svec1 * 0.5);
+//		
+//		new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
+//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(0)); // vtx 0
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(0));
+//
+//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(1)); // vtx 1
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(1));
+//		
+//		new_vtx_num = new_prim->appendVertex(new_pt1); // new_pt0
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(1), prim->getVertexOffset(2), 0.5);
+//		
+//		new_vtx_num = new_prim->appendVertex(new_pt0); // new_pt1
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(0), prim->getVertexOffset(3), 0.5);
+//		new_prim->setClosed(true);
+//		result.append(static_cast<GEO_Primitive*>(new_prim));
+//
+//		new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
+//		new_vtx_num = new_prim->appendVertex(new_pt1); // vtx 0
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(0), prim->getVertexOffset(3), 0.5);
+//
+//		new_vtx_num = new_prim->appendVertex(new_pt0); // vtx 1
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(1), prim->getVertexOffset(2), 0.5);
+//		
+//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(2)); // new_pt0
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(2));
+//		
+//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(3)); // new_pt1
+//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
+//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(3));
+//		new_prim->setClosed(true);
+//		result.append(static_cast<GEO_Primitive*>(new_prim));
+//
+//	}
+//	//else {
+//	//	auto tvec0 = ph.get(prim_points_offsets(1)) - ph.get(prim_points_offsets(0));
+//	//	auto tvec1 = ph.get(prim_points_offsets(2)) - ph.get(prim_points_offsets(3));
+//	//	ph.set(new_pt0, ph.get(prim_points_offsets(0)) + tvec0 * 0.5);
+//	//	ph.set(new_pt1, ph.get(prim_points_offsets(3)) + tvec1 * 0.5);
+//
+//	//	new_prim_offsets.append(prim_points_offsets(0));
+//	//	new_prim_offsets.append(new_pt0);
+//	//	new_prim_offsets.append(new_pt1);
+//	//	new_prim_offsets.append(prim_points_offsets(3));
+//	//	result.append(build_prim(new_prim_offsets));
+//
+//	//	new_prim_offsets.clear();
+//	//	new_prim_offsets.append(new_pt0);
+//	//	new_prim_offsets.append(prim_points_offsets(1));
+//	//	new_prim_offsets.append(prim_points_offsets(2));
+//	//	new_prim_offsets.append(new_pt1);
+//	//	result.append(build_prim(new_prim_offsets));
+//	//}
+//	bla:
+//	kill_prims.append(prim);
+//}
+
+void SOP_Hreeble::split_primitive(GEO_Primitive * source_prim, UT_ValArray<GEO_Primitive*>& result, const unsigned short dir)
 {
-	auto build_prim = [this](const UT_ValArray<GA_Offset> &offsets) -> GEO_Primitive*{
-		auto prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-		for (const auto off : offsets) {
-			prim->appendVertex(off);
-		}
-		prim->close();
-		return static_cast<GEO_Primitive*>(prim);
-	};
-	GA_Offset new_pt0 = gdp->appendPointOffset();
-	GA_Offset new_pt1 = gdp->appendPointOffset();
-	UT_ValArray<GA_Offset> prim_points_offsets;
-	UT_ValArray<GA_Offset> new_prim_offsets;
-	for (GA_Iterator it(prim->getVertexRange()); !it.atEnd(); ++it) {
-		prim_points_offsets.append(gdp->vertexPoint(*it));
+	GA_OffsetArray prim_ptoffs;
+	GA_OffsetArray prim_vtoffs;
+	for (GA_Iterator it(source_prim->getVertexRange()); !it.atEnd(); ++it){
+		prim_vtoffs.append(*it);
+		prim_ptoffs.append(gdp->vertexPoint(*it));
 	}
+
+	GA_Offset new_ptof = gdp->appendPointBlock(2);
+	GA_VertexWrangler twrangler(*gdp);
+	//auto VtxToPt = [this](const GEO_PrimPoly *prim, const GA_Size &index) {return gdp->vertexPoint(prim->getVertexOffset(index)); };
+	GEO_PrimPoly *prim1 = GEO_PrimPoly::build(gdp, 4, false, false);
+	GEO_PrimPoly *prim2 = GEO_PrimPoly::build(gdp, 4, false, false);
 	if (dir == 0) {
-		auto svec0 = ph.get(prim_points_offsets(3)) - ph.get(prim_points_offsets(0));
-		auto svec1 = ph.get(prim_points_offsets(2)) - ph.get(prim_points_offsets(1));
-		ph.set(new_pt0, ph.get(prim_points_offsets(0)) + svec0 * 0.5);
-		ph.set(new_pt1, ph.get(prim_points_offsets(1)) + svec1 * 0.5);
-
-		new_prim_offsets.append(prim_points_offsets(0));
-		new_prim_offsets.append(prim_points_offsets(1));
-		new_prim_offsets.append(new_pt1);
-		new_prim_offsets.append(new_pt0);
-		result.append(build_prim(new_prim_offsets));
-
-		new_prim_offsets.clear();
-		new_prim_offsets.append(new_pt0);
-		new_prim_offsets.append(new_pt1);
-		new_prim_offsets.append(prim_points_offsets(2));
-		new_prim_offsets.append(prim_points_offsets(3));
-		result.append(build_prim(new_prim_offsets));
+		auto svec0 = ph.get(prim_ptoffs(3)) - ph.get(prim_ptoffs(0));
+		auto svec1 = ph.get(prim_ptoffs(2)) - ph.get(prim_ptoffs(1));
+		ph.set(new_ptof, ph.get(prim_ptoffs(1)) + svec1 * 0.5); // vertex  top middle
+		ph.set(new_ptof + 1, ph.get(prim_ptoffs(0)) + svec0 * 0.5); // vertex bottom middle
+		
+		prim1->setVertexPoint(0, prim_ptoffs(0));
+		twrangler.copyAttributeValues(prim1->getVertexOffset(0), prim_vtoffs(0));
+		prim1->setVertexPoint(1, prim_ptoffs(1));
+		twrangler.copyAttributeValues(prim1->getVertexOffset(1), prim_vtoffs(1));
+		prim1->setVertexPoint(2, new_ptof);
+		twrangler.lerpAttributeValues(prim1->getVertexOffset(2), prim_vtoffs(1), prim_vtoffs(2), 0.5);
+		prim1->setVertexPoint(3, new_ptof + 1);
+		twrangler.lerpAttributeValues(prim1->getVertexOffset(3), prim_vtoffs(0), prim_vtoffs(3), 0.5);
+		
+		prim2->setVertexPoint(0, new_ptof+1);
+		twrangler.lerpAttributeValues(prim2->getVertexOffset(0), prim_vtoffs(0), prim_vtoffs(3), 0.5);
+		prim2->setVertexPoint(1, new_ptof);
+		twrangler.lerpAttributeValues(prim2->getVertexOffset(1), prim_vtoffs(1), prim_vtoffs(2), 0.5);
+		prim2->setVertexPoint(2, prim_ptoffs(2));
+		twrangler.copyAttributeValues(prim2->getVertexOffset(2), prim_vtoffs(2));
+		prim2->setVertexPoint(3, prim_ptoffs(3));
+		twrangler.copyAttributeValues(prim2->getVertexOffset(3), prim_vtoffs(3));
 	}
 	else {
-		auto tvec0 = ph.get(prim_points_offsets(1)) - ph.get(prim_points_offsets(0));
-		auto tvec1 = ph.get(prim_points_offsets(2)) - ph.get(prim_points_offsets(3));
-		ph.set(new_pt0, ph.get(prim_points_offsets(0)) + tvec0 * 0.5);
-		ph.set(new_pt1, ph.get(prim_points_offsets(3)) + tvec1 * 0.5);
-
-		new_prim_offsets.append(prim_points_offsets(0));
-		new_prim_offsets.append(new_pt0);
-		new_prim_offsets.append(new_pt1);
-		new_prim_offsets.append(prim_points_offsets(3));
-		result.append(build_prim(new_prim_offsets));
-
-		new_prim_offsets.clear();
-		new_prim_offsets.append(new_pt0);
-		new_prim_offsets.append(prim_points_offsets(1));
-		new_prim_offsets.append(prim_points_offsets(2));
-		new_prim_offsets.append(new_pt1);
-		result.append(build_prim(new_prim_offsets));
+		auto svec0 = ph.get(prim_ptoffs(1)) - ph.get(prim_ptoffs(0));
+		auto svec1 = ph.get(prim_ptoffs(2)) - ph.get(prim_ptoffs(3));
+		ph.set(new_ptof, ph.get(prim_ptoffs(0)) + svec0 * 0.5); // vertex  left middle
+		ph.set(new_ptof+1, ph.get(prim_ptoffs(3)) + svec1 * 0.5); // vertex right middle
+		
+		prim1->setVertexPoint(0, prim_ptoffs(0));
+		twrangler.copyAttributeValues(prim1->getVertexOffset(0), prim_vtoffs(0));
+		prim1->setVertexPoint(1, new_ptof);
+		twrangler.lerpAttributeValues(prim1->getVertexOffset(1), prim_vtoffs(0), prim_vtoffs(1), 0.5);
+		prim1->setVertexPoint(2, new_ptof + 1);
+		twrangler.lerpAttributeValues(prim1->getVertexOffset(2), prim_vtoffs(2), prim_vtoffs(3), 0.5);
+		prim1->setVertexPoint(3, prim_ptoffs(3));
+		twrangler.copyAttributeValues(prim1->getVertexOffset(3), prim_vtoffs(3));
+		
+		prim2->setVertexPoint(0, new_ptof);
+		twrangler.lerpAttributeValues(prim2->getVertexOffset(0), prim_vtoffs(0), prim_vtoffs(1), 0.5);
+		prim2->setVertexPoint(1, prim_ptoffs(1));
+		twrangler.copyAttributeValues(prim2->getVertexOffset(1), prim_vtoffs(1));
+		prim2->setVertexPoint(2, prim_ptoffs(2));
+		twrangler.copyAttributeValues(prim2->getVertexOffset(2), prim_vtoffs(2));
+		prim2->setVertexPoint(3, new_ptof + 1);
+		twrangler.lerpAttributeValues(prim2->getVertexOffset(3), prim_vtoffs(2), prim_vtoffs(3), 0.5);
 	}
-	kill_prims.append(prim);
+
+
+	result.append((GEO_Primitive*)prim1);
+	result.append((GEO_Primitive*)prim2);
+	kill_prims.append(source_prim);
 }
 
 void SOP_Hreeble::divide(GEO_Primitive * prim, UT_ValArray<GEO_Primitive*>& result)
@@ -283,15 +387,16 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 				divide(source_prim, panel_prims); // Divide source prim into panels
 			else if (source_prim->getVertexCount() == 3)
 				panel_prims.append(source_prim);
-			for (auto prim : panel_prims) {
-				panel_height = SYSfit01((fpreal64)SYSfastRandom(my_seed), panel_height_parm[0], panel_height_parm[1]);
-				GEO_Primitive *extruded_front_prim = extrude(prim, panel_height, panel_inset_parm);
-				top_prims.append(extruded_front_prim);
-			}
+			//for (auto prim : panel_prims) {
+			//	panel_height = SYSfit01((fpreal64)SYSfastRandom(my_seed), panel_height_parm[0], panel_height_parm[1]);
+			//	GEO_Primitive *extruded_front_prim = extrude(prim, panel_height, panel_inset_parm);
+			//	top_prims.append(extruded_front_prim);
+			//}
 		}
 		else {
 			top_prims.append(source_prim);
 		}
+		continue;
 		if (num_selected_shapes != 0) {
 			for (const auto prim: top_prims){
 				UT_Vector3 primN = prim->computeNormal();
