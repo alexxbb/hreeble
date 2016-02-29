@@ -330,17 +330,21 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		pt2_pos += inset_dir * inset;
 		ph.set(pt2, pt2_pos);
 		auto new_prim = GEO_PrimPoly::build(gdp, 4, false, false);
+		
 		new_prim->setVertexPoint(0, prim_ptoffs(i));
 		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(0), prim_vtoffs(i));
+	
 		new_prim->setVertexPoint(1, prim_ptoffs(i == 3 ? 0 : i + 1));
 		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(1), prim_vtoffs(i == 3 ? 0 : i + 1));
+		
 		new_prim->setVertexPoint(2, pt2);
-		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(2), prim_vtoffs(2));
+		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(2), prim_vtoffs(i == 3 ? 0 : i + 1));
+		
 		new_prim->setVertexPoint(3, pt1);
-		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(3), prim_vtoffs(3));
+		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(3), prim_vtoffs(i == 3 ? 0 : i - 1));
 
-		//auto vtx_0 = vth.get(prim_vtoffs(0));
-		//auto vtx_1 = vth.get(prim_vtoffs(1));
+		auto vtx_0 = vth.get(prim_vtoffs(0));
+		auto vtx_1 = vth.get(prim_vtoffs(1));
 		//auto vtx_2 = vth.get(prim_vtoffs(2));
 		//auto vtx_3 = vth.get(prim_vtoffs(3));
 
@@ -351,15 +355,21 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		UT_Vector3R projpoint = vth.get(prim_vtoffs(i)) + vv * proj;
 		UT_Vector3R offset_dir = projpoint - island_center;
 		offset_dir.normalize();
+
+		GA_Offset uv1 = new_prim->getVertexOffset(0);
+		GA_Offset uv2 = new_prim->getVertexOffset(1);
+		vth.add(uv1, offset_dir * (height / 10));
+		vth.add(uv2, offset_dir * (height / 10));
 		
 	}
-		auto top_prim = GEO_PrimPoly::build(gdp, 4, false, false);
-		for (int i = 0; i < 4; i++) {
-			top_prim->setVertexPoint(i, new_pts + i);
-			vtxwrangler.copyAttributeValues(top_prim->getVertexOffset(i), prim_vtoffs(i));
-		}
-		kill_prims.append(source_prim);
-		return static_cast<GEO_Primitive*>(top_prim);
+		//auto top_prim = GEO_PrimPoly::build(gdp, 4, false, false);
+		//for (int i = 0; i < 4; i++) {
+		//	top_prim->setVertexPoint(i, new_pts + i);
+		//	vtxwrangler.copyAttributeValues(top_prim->getVertexOffset(i), prim_vtoffs(i));
+		//}
+		//kill_prims.append(source_prim);
+		//return static_cast<GEO_Primitive*>(top_prim);
+		return static_cast<GEO_Primitive*>(nullptr);
 
 }
 
