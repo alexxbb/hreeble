@@ -281,30 +281,24 @@ void SOP_Hreeble::divide(GEO_Primitive * prim, UT_ValArray<GEO_Primitive*>& resu
 
 GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & height, const fpreal &inset)
 {
-	auto build_prim = [this](const GA_OffsetArray &points) -> GEO_Primitive*{
-		auto prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-		for (const auto pt_off : points) {
-			prim->appendVertex(pt_off);
-		}
-		prim->close();
-		return static_cast<GEO_Primitive*>(prim);
-	};
-
+	//auto build_prim = [this](const GA_OffsetArray &points) -> GEO_Primitive*{
+	//	auto prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
+	//	for (const auto pt_off : points) {
+	//		prim->appendVertex(pt_off);
+	//	}
+	//	prim->close();
+	//	return static_cast<GEO_Primitive*>(prim);
+	//};
 	UT_Vector3 primN = source_prim->computeNormal();
 	UT_Vector4 primP;
 	source_prim->evaluateInteriorPoint(primP, 0.5, 0.5);
-
 	UT_Vector3 top_center = primP + primN * height;
-	GA_OffsetArray front_points;
-	UT_ValArray<UT_Pair<GA_Offset, GA_Offset>> pairs;
-	GA_Iterator it(source_prim->getVertexRange());
-	GA_Size i = 0;
-	GA_OffsetArray prim_ptoffs;
-	GA_OffsetArray prim_vtoffs;
+	GA_OffsetArray ptoffs;
+	GA_OffsetArray vtoffs;
 	GA_VertexWrangler vtxwrangler(*gdp);
 	for (GA_Iterator it(source_prim->getVertexRange()); !it.atEnd(); ++it){
-		prim_vtoffs.append(*it);
-		prim_ptoffs.append(gdp->vertexPoint(*it));
+		vtoffs.append(*it);
+		ptoffs.append(gdp->vertexPoint(*it));
 	}
 	GA_RWHandleV3D vth = gdp->findTextureAttribute(GA_ATTRIB_VERTEX);
 	UT_Vector3R island_center(0.0, 0.0, 0.0);
@@ -313,46 +307,51 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 	}
 	island_center /= source_prim->getVertexCount();
 	island_center.z() = 0.0;
+	GA_Offset point_block = gdp->appendPointBlock(source_prim->getVertexCount());
+	GA_RWHandleV3D isl = gdp->addFloatTuple(GA_ATTRIB_VERTEX, "island", 3);
+	GA_RWHandleV3D of = gdp->addFloatTuple(GA_ATTRIB_VERTEX, "offset", 3);
+	GA_RWHandleV3D pr = gdp->addFloatTuple(GA_ATTRIB_VERTEX, "proj", 3);
 
-	GA_Offset new_pts = gdp->appendPointBlock(source_prim->getVertexCount());
+	auto VtxToPt = [this, source_prim](const GA_Size &index) {return gdp->vertexPoint(source_prim->getVertexOffset(index)); };
 	for (GA_Size i = 0;i < source_prim->getVertexCount(); i++) {
-		UT_Vector3 pt1_pos, pt2_pos, inset_dir;
-		GA_Offset pt1 = new_pts + i;
-		GA_Offset pt2 = new_pts + (i == 3 ? 0 : i + 1);
-		pt1_pos = ph.get(gdp->vertexPoint(prim_vtoffs(i))) + primN * height;
-		pt2_pos = ph.get(gdp->vertexPoint(prim_vtoffs(i == 3 ? 0 : i+1))) + primN * height;
-		inset_dir = (top_center - pt1_pos);
-		inset_dir.normalize();
-		pt1_pos += inset_dir * inset;
-		ph.set(pt1, pt1_pos);
+		GA_Offset prev, next = point_block;
+		UT_Vector3 pt2_pos, pt3_pos, inset_dir;
+		GA_Offset pt0 = VtxToPt(i);
+		GA_Offset pt1 = VtxToPt(i == 3 ? 0 : i + 1);
+		prev = point_block + i;
+		next = prev + 1;
+		GA_Offset pt2 = (i == 3 ? point_block: next);
+		GA_Offset pt3 = prev;
+		pt2_pos = ph.get(pt1) + primN * height;
+		pt3_pos = ph.get(pt0) + primN * height;
 		inset_dir = (top_center - pt2_pos);
 		inset_dir.normalize();
 		pt2_pos += inset_dir * inset;
 		ph.set(pt2, pt2_pos);
+		inset_dir = (top_center - pt3_pos);
+		inset_dir.normalize();
+		pt3_pos += inset_dir * inset;
+		ph.set(pt3, pt3_pos);
+
 		auto new_prim = GEO_PrimPoly::build(gdp, 4, false, false);
-		
-		new_prim->setVertexPoint(0, prim_ptoffs(i));
-		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(0), prim_vtoffs(i));
+		new_prim->setVertexPoint(0, pt0);
+		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(0), source_prim->getVertexOffset(i));
 	
-		new_prim->setVertexPoint(1, prim_ptoffs(i == 3 ? 0 : i + 1));
-		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(1), prim_vtoffs(i == 3 ? 0 : i + 1));
+		new_prim->setVertexPoint(1, pt1);
+		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(1), source_prim->getVertexOffset((i == 3 ? 0 : i + 1)));
 		
 		new_prim->setVertexPoint(2, pt2);
-		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(2), prim_vtoffs(i == 3 ? 0 : i + 1));
+		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(2), new_prim->getVertexOffset(1));
 		
-		new_prim->setVertexPoint(3, pt1);
-		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(3), prim_vtoffs(i == 3 ? 0 : i - 1));
+		new_prim->setVertexPoint(3, pt3);
+		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(3), new_prim->getVertexOffset(0));
 
-		auto vtx_0 = vth.get(prim_vtoffs(0));
-		auto vtx_1 = vth.get(prim_vtoffs(1));
-		//auto vtx_2 = vth.get(prim_vtoffs(2));
-		//auto vtx_3 = vth.get(prim_vtoffs(3));
 
-		UT_Vector3R vc = island_center - vth.get(prim_vtoffs(i));
-		UT_Vector3R vv = vth.get(prim_vtoffs(i==3?0:i+1)) - vth.get(prim_vtoffs(i));
-		auto proj = vc.dot(vv);
+		UT_Vector3R vc = island_center - vth.get(new_prim->getVertexOffset(0));
+		UT_Vector3R vv = vth.get(new_prim->getVertexOffset(1)) - vth.get(new_prim->getVertexOffset(0));
+		fpreal proj = vc.dot(vv) / vv.length();
 		vv.normalize();
-		UT_Vector3R projpoint = vth.get(prim_vtoffs(i)) + vv * proj;
+		UT_Vector3R projpoint = vth.get(new_prim->getVertexOffset(0)) + vv * proj;
 		UT_Vector3R offset_dir = projpoint - island_center;
 		offset_dir.normalize();
 
@@ -362,14 +361,14 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		vth.add(uv2, offset_dir * (height / 10));
 		
 	}
-		//auto top_prim = GEO_PrimPoly::build(gdp, 4, false, false);
-		//for (int i = 0; i < 4; i++) {
-		//	top_prim->setVertexPoint(i, new_pts + i);
-		//	vtxwrangler.copyAttributeValues(top_prim->getVertexOffset(i), prim_vtoffs(i));
-		//}
-		//kill_prims.append(source_prim);
-		//return static_cast<GEO_Primitive*>(top_prim);
-		return static_cast<GEO_Primitive*>(nullptr);
+		auto top_prim = GEO_PrimPoly::build(gdp, 4, false, false);
+		for (int i = 0; i < 4; i++) {
+			top_prim->setVertexPoint(i, point_block + i);
+			vtxwrangler.copyAttributeValues(top_prim->getVertexOffset(i), vtoffs(i));
+		}
+		kill_prims.append(source_prim);
+		return static_cast<GEO_Primitive*>(top_prim);
+		//return static_cast<GEO_Primitive*>(nullptr);
 
 }
 
@@ -429,8 +428,7 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 		if (generate_panels != 0) {
 			panel_prims.clear();
 			if (source_prim->getVertexCount() == 4)
-				panel_prims.append(source_prim);
-				//divide(source_prim, panel_prims); // Divide source prim into panels
+				divide(source_prim, panel_prims); // Divide source prim into panels
 			else if (source_prim->getVertexCount() == 3)
 				panel_prims.append(source_prim);
 			for (auto prim : panel_prims) {
@@ -442,7 +440,7 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 		else {
 			top_prims.append(source_prim);
 		}
-		continue;
+		//continue;
 		if (num_selected_shapes != 0) {
 			for (const auto prim: top_prims){
 				UT_Vector3 primN = prim->computeNormal();
