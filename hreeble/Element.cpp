@@ -151,116 +151,81 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 }
 
 
+
 void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 &primN, const fpreal & height)
 {
-	auto build_prim = [gdp](const GA_OffsetArray &points) -> GEO_Primitive*{
-		auto new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-		for (const auto pt_off : points) {
-			new_prim->appendVertex(pt_off);
-		}
-		new_prim->close();
-		return static_cast<GEO_Primitive*>(new_prim);
-	};
-
 	GA_RWHandleV3 ph = gdp->getP();
+	GA_RWHandleV3D vh = gdp->findTextureAttribute(GA_ATTRIB_VERTEX);
+	//GA_OffsetArray ptoffs;
+	//GA_OffsetArray prim_vtof;
+	//for (GA_Iterator it(prim->getVertexRange()); !it.atEnd(); it.advance()) {
+	//	prim_ptof.append(gdp->vertexPoint(*it));
+	//	prim_vtof.append(*it);
+	//}
 	for (const auto &subelem : subelements) {
-		GA_Offset offset_block = gdp->appendPointBlock(subelem.coords.entries() * 2);
-		GA_OffsetArray front_offsets;
-		UT_ValArray<UT_Pair<GA_Offset, GA_Offset>> pairs;
 		exint num_coords = subelem.coords.entries();
+		GA_Offset point_block = gdp->appendPointBlock(num_coords * 2);
+		GA_OffsetArray top_ptoffs;
+		top_ptoffs.clear();
 		for (exint i = 0; i < num_coords; i++) {
-			const UT_Vector2R &coord = subelem.coords(i);
-			UT_Vector4 pos_b;
-			UT_Vector3 pos_t;
+			bool last(i == (num_coords - 1));
+			const UT_Vector2R &coord0 = subelem.coords(i);
+			const UT_Vector2R &coord1 = subelem.coords((last ? 0 : i + 1));
+			UT_Vector4 pt0, pt1, pt2, pt3;
+			GA_Offset ptof0 = point_block + i*2;
+			GA_Offset ptof1 = point_block + i*2 + 1;
+			GA_Offset ptof2 = point_block + (last ? 0 : i*2 + 2);
+			GA_Offset ptof3 = point_block + (last ? 1 : i*2 + 3);
+			top_ptoffs.append(ptof1);
+			prim->evaluateInteriorPoint(pt0, coord0.x(), coord0.y());
+			prim->evaluateInteriorPoint(pt1, coord1.x(), coord1.y());
+			ph.set(ptof0, pt0);
+			ph.set(ptof2, pt1);
+			
+			ph.set(ptof1, pt0 + primN * height);
+			ph.set(ptof3, pt1 + primN * height);
+			
+			auto new_prim = GEO_PrimPoly::build(gdp, 4, false, false);
+			new_prim->setVertexPoint(0, ptof0);
+			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(0), source_prim->getVertexOffset(i));
+		
+			new_prim->setVertexPoint(1, ptof2);
+			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(1), source_prim->getVertexOffset((i == 3 ? 0 : i + 1)));
+			
+			new_prim->setVertexPoint(2, ptof3);
+			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(2), new_prim->getVertexOffset(1));
+			
+			new_prim->setVertexPoint(3, ptof1);
+			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(3), new_prim->getVertexOffset(0));
 
-			GA_Offset pt_off1 = offset_block + i;
-			GA_Offset pt_off2 = offset_block + i + num_coords;
-			prim->evaluateInteriorPoint(pos_b, coord.x(), coord.y());
-			pos_t = pos_b + primN * height;
-
-			ph.set(pt_off1, pos_b);
-			ph.set(pt_off2, pos_t);
-			front_offsets.append(pt_off2);
-			pairs.append(OffsetPair(pt_off1, pt_off2));
-
+			}
+		auto top_prim = GEO_PrimPoly::build(gdp, num_coords, false, false);
+		for (int j = 0; j < num_coords; j++) {
+			top_prim->setVertexPoint(j, top_ptoffs(j));
 		}
-		pairs.append(pairs(0));
-		GA_OffsetArray prim_points;
-		for (GA_Size i = 0; i < subelem.coords.entries(); i++){
-			OffsetPair pair1 = pairs(i);
-			OffsetPair pair2 = pairs(i + 1);
-			prim_points.clear();
-			prim_points.append(pair1.myFirst);
-			prim_points.append(pair2.myFirst);
-			prim_points.append(pair2.mySecond);
-			prim_points.append(pair1.mySecond);
-			auto prim = build_prim(prim_points);
-			if (elem_group)
-				elem_group->add(prim);
-		}
-		auto front_prim = build_prim(front_offsets);
-		if (elem_front_group){
-			elem_front_group->add(front_prim);
-			elem_group->add(front_prim);
-		}
-		front_offsets.clear();
-		pairs.clear();
+		//pairs.append(pairs(0));
+		//GA_OffsetArray prim_points;
+		//for (GA_Size i = 0; i < subelem.coords.entries(); i++){
+		//	OffsetPair pair1 = pairs(i);
+		//	OffsetPair pair2 = pairs(i + 1);
+		//	prim_points.clear();
+		//	prim_points.append(pair1.myFirst);
+		//	prim_points.append(pair2.myFirst);
+		//	prim_points.append(pair2.mySecond);
+		//	prim_points.append(pair1.mySecond);
+		//	auto prim = build_prim(prim_points);
+		//	if (elem_group)
+		//		elem_group->add(prim);
+		//}
+		//auto front_prim = build_prim(front_offsets);
+		//if (elem_front_group){
+		//	elem_front_group->add(front_prim);
+		//	elem_group->add(front_prim);
+		//}
+		//front_offsets.clear();
+		//pairs.clear();
 	}
 }
-
-//void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 &primN, const fpreal & height)
-//{
-//	GA_RWHandleV3 ph = gdp->getP();
-//	GA_OffsetArray prim_ptof;
-//	GA_OffsetArray prim_vtof;
-//	for (GA_Iterator it(prim->getVertexRange()); !it.atEnd(); it.advance()) {
-//		prim_ptof.append(gdp->vertexPoint(*it));
-//		prim_vtof.append(*it);
-//	}
-//	for (const auto &subelem : subelements) {
-//		GA_Offset offset_block = gdp->appendPointBlock(subelem.coords.entries() * 2);
-//		GA_OffsetArray front_offsets;
-//		UT_ValArray<UT_Pair<GA_Offset, GA_Offset>> pairs;
-//		exint num_coords = subelem.coords.entries();
-//		for (exint i = 0; i < num_coords; i++) {
-//			const UT_Vector2R &coord = subelem.coords(i);
-//			UT_Vector4 pos_b;
-//			UT_Vector3 pos_t;
-//
-//			GA_Offset pt_off1 = offset_block + i;
-//			GA_Offset pt_off2 = offset_block + i + num_coords;
-//			prim->evaluateInteriorPoint(pos_b, coord.x(), coord.y());
-//			pos_t = pos_b + primN * height;
-//
-//			ph.set(pt_off1, pos_b);
-//			ph.set(pt_off2, pos_t);
-//			front_offsets.append(pt_off2);
-//			pairs.append(OffsetPair(pt_off1, pt_off2));
-//
-//		}
-//		pairs.append(pairs(0));
-//		GA_OffsetArray prim_points;
-//		for (GA_Size i = 0; i < subelem.coords.entries(); i++){
-//			OffsetPair pair1 = pairs(i);
-//			OffsetPair pair2 = pairs(i + 1);
-//			prim_points.clear();
-//			prim_points.append(pair1.myFirst);
-//			prim_points.append(pair2.myFirst);
-//			prim_points.append(pair2.mySecond);
-//			prim_points.append(pair1.mySecond);
-//			auto prim = build_prim(prim_points);
-//			if (elem_group)
-//				elem_group->add(prim);
-//		}
-//		auto front_prim = build_prim(front_offsets);
-//		if (elem_front_group){
-//			elem_front_group->add(front_prim);
-//			elem_group->add(front_prim);
-//		}
-//		front_offsets.clear();
-//		pairs.clear();
-//	}
-//}
 
 exint Element::num_points()
 {

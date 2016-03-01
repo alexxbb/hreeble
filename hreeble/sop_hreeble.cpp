@@ -107,95 +107,6 @@ OP_ERROR SOP_Hreeble::cookInputGroups(OP_Context & ctx, int alone)
 	return cookInputPrimitiveGroups(ctx, source_prim_group, alone);
 }
 
-//void SOP_Hreeble::split_primitive(GEO_Primitive * prim, UT_ValArray<GEO_Primitive*>& result, const unsigned short dir)
-//{
-//	//auto build_prim = [this](const UT_ValArray<GA_Offset> &poffsets) -> GEO_Primitive*{
-//	//	auto new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-//	//	for (const auto off : poffsets) {
-//	//		new_prim->appendVertex(off);
-//	//	}
-//	//	new_prim->close();
-//	//	return static_cast<GEO_Primitive*>(new_prim);
-//	//};
-//
-//	GA_Offset new_pt0 = gdp->appendPointOffset();
-//	GA_Offset new_pt1 = gdp->appendPointOffset();
-//	UT_ValArray<GA_Offset> prim_points_offsets;
-//	UT_ValArray<GA_Offset> new_prim_offsets;
-//	UT_ValArray<GA_Offset> vert_interp_offsets;
-//	
-//	GA_VertexWrangler wrangler(*gdp, *gdp, GA_AttributeFilter::selectByName("uv"));
-//	GA_Size new_vtx_num;
-//	GA_Offset new_vtx_off;
-//	GEO_PrimPoly *new_prim;
-//	auto VtxToPtOff = [&prim, this](const GA_Size &index) {return gdp->vertexPoint(prim->getVertexOffset(index)); };
-//	if (dir == 0) {
-//		auto svec0 = ph.get(VtxToPtOff(3)) - ph.get(VtxToPtOff(0));
-//		auto svec1 = ph.get(VtxToPtOff(2)) - ph.get(VtxToPtOff(1));
-//		ph.set(new_pt0, ph.get(VtxToPtOff(0)) + svec0 * 0.5);
-//		ph.set(new_pt1, ph.get(VtxToPtOff(1)) + svec1 * 0.5);
-//		
-//		new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(0)); // vtx 0
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(0));
-//
-//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(1)); // vtx 1
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(1));
-//		
-//		new_vtx_num = new_prim->appendVertex(new_pt1); // new_pt0
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(1), prim->getVertexOffset(2), 0.5);
-//		
-//		new_vtx_num = new_prim->appendVertex(new_pt0); // new_pt1
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(0), prim->getVertexOffset(3), 0.5);
-//		new_prim->setClosed(true);
-//		result.append(static_cast<GEO_Primitive*>(new_prim));
-//
-//		new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-//		new_vtx_num = new_prim->appendVertex(new_pt1); // vtx 0
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(0), prim->getVertexOffset(3), 0.5);
-//
-//		new_vtx_num = new_prim->appendVertex(new_pt0); // vtx 1
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.lerpAttributeValues(new_vtx_off, prim->getVertexOffset(1), prim->getVertexOffset(2), 0.5);
-//		
-//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(2)); // new_pt0
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(2));
-//		
-//		new_vtx_num = new_prim->appendVertex(VtxToPtOff(3)); // new_pt1
-//		new_vtx_off = new_prim->getVertexOffset(new_vtx_num);
-//		wrangler.copyAttributeValues(new_vtx_off, prim->getVertexOffset(3));
-//		new_prim->setClosed(true);
-//		result.append(static_cast<GEO_Primitive*>(new_prim));
-//
-//	}
-//	//else {
-//	//	auto tvec0 = ph.get(prim_points_offsets(1)) - ph.get(prim_points_offsets(0));
-//	//	auto tvec1 = ph.get(prim_points_offsets(2)) - ph.get(prim_points_offsets(3));
-//	//	ph.set(new_pt0, ph.get(prim_points_offsets(0)) + tvec0 * 0.5);
-//	//	ph.set(new_pt1, ph.get(prim_points_offsets(3)) + tvec1 * 0.5);
-//
-//	//	new_prim_offsets.append(prim_points_offsets(0));
-//	//	new_prim_offsets.append(new_pt0);
-//	//	new_prim_offsets.append(new_pt1);
-//	//	new_prim_offsets.append(prim_points_offsets(3));
-//	//	result.append(build_prim(new_prim_offsets));
-//
-//	//	new_prim_offsets.clear();
-//	//	new_prim_offsets.append(new_pt0);
-//	//	new_prim_offsets.append(prim_points_offsets(1));
-//	//	new_prim_offsets.append(prim_points_offsets(2));
-//	//	new_prim_offsets.append(new_pt1);
-//	//	result.append(build_prim(new_prim_offsets));
-//	//}
-//	bla:
-//	kill_prims.append(prim);
-//}
 
 void SOP_Hreeble::split_primitive(GEO_Primitive * source_prim, UT_ValArray<GEO_Primitive*>& result, const unsigned short dir)
 {
@@ -293,13 +204,7 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 	UT_Vector4 primP;
 	source_prim->evaluateInteriorPoint(primP, 0.5, 0.5);
 	UT_Vector3 top_center = primP + primN * height;
-	GA_OffsetArray ptoffs;
-	GA_OffsetArray vtoffs;
 	GA_VertexWrangler vtxwrangler(*gdp);
-	for (GA_Iterator it(source_prim->getVertexRange()); !it.atEnd(); ++it){
-		vtoffs.append(*it);
-		ptoffs.append(gdp->vertexPoint(*it));
-	}
 	GA_RWHandleV3D vth = gdp->findTextureAttribute(GA_ATTRIB_VERTEX);
 	UT_Vector3R island_center(0.0, 0.0, 0.0);
 	for (GA_Iterator it(source_prim->getVertexRange()); !it.atEnd();++it){
@@ -308,9 +213,6 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 	island_center /= source_prim->getVertexCount();
 	island_center.z() = 0.0;
 	GA_Offset point_block = gdp->appendPointBlock(source_prim->getVertexCount());
-	GA_RWHandleV3D isl = gdp->addFloatTuple(GA_ATTRIB_VERTEX, "island", 3);
-	GA_RWHandleV3D of = gdp->addFloatTuple(GA_ATTRIB_VERTEX, "offset", 3);
-	GA_RWHandleV3D pr = gdp->addFloatTuple(GA_ATTRIB_VERTEX, "proj", 3);
 
 	auto VtxToPt = [this, source_prim](const GA_Size &index) {return gdp->vertexPoint(source_prim->getVertexOffset(index)); };
 	for (GA_Size i = 0;i < source_prim->getVertexCount(); i++) {
@@ -318,10 +220,9 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		UT_Vector3 pt2_pos, pt3_pos, inset_dir;
 		GA_Offset pt0 = VtxToPt(i);
 		GA_Offset pt1 = VtxToPt(i == 3 ? 0 : i + 1);
-		prev = point_block + i;
-		next = prev + 1;
-		GA_Offset pt2 = (i == 3 ? point_block: next);
-		GA_Offset pt3 = prev;
+
+		GA_Offset pt2 = point_block + (i == 3 ? 0 : i + 1);
+		GA_Offset pt3 = point_block + i;
 		pt2_pos = ph.get(pt1) + primN * height;
 		pt3_pos = ph.get(pt0) + primN * height;
 		inset_dir = (top_center - pt2_pos);
@@ -364,11 +265,11 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		auto top_prim = GEO_PrimPoly::build(gdp, 4, false, false);
 		for (int i = 0; i < 4; i++) {
 			top_prim->setVertexPoint(i, point_block + i);
-			vtxwrangler.copyAttributeValues(top_prim->getVertexOffset(i), vtoffs(i));
+			vtxwrangler.copyAttributeValues(top_prim->getVertexOffset(i), source_prim->getVertexOffset(i));
 		}
 		kill_prims.append(source_prim);
 		return static_cast<GEO_Primitive*>(top_prim);
-		//return static_cast<GEO_Primitive*>(nullptr);
+		return static_cast<GEO_Primitive*>(nullptr);
 
 }
 
@@ -440,7 +341,6 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 		else {
 			top_prims.append(source_prim);
 		}
-		//continue;
 		if (num_selected_shapes != 0) {
 			for (const auto prim: top_prims){
 				UT_Vector3 primN = prim->computeNormal();
