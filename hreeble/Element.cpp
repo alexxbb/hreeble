@@ -2,6 +2,8 @@
 #include <GEO/GEO_PrimPoly.h>
 #include <UT/UT_Pair.h>
 #include <SYS/SYS_Math.h>
+#include <GA/GA_AttributeRefMap.h>
+#include <GA/GA_ElementWrangler.h>
 
 typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
@@ -156,12 +158,14 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 {
 	GA_RWHandleV3 ph = gdp->getP();
 	GA_RWHandleV3D vh = gdp->findTextureAttribute(GA_ATTRIB_VERTEX);
-	//GA_OffsetArray ptoffs;
-	//GA_OffsetArray prim_vtof;
-	//for (GA_Iterator it(prim->getVertexRange()); !it.atEnd(); it.advance()) {
-	//	prim_ptof.append(gdp->vertexPoint(*it));
-	//	prim_vtof.append(*it);
-	//}
+	GA_AttributeRefMap map(*gdp);
+	map.appendDest(vh.getAttribute());
+	UT_Vector3R island_center(0.0, 0.0, 0.0);
+	for (GA_Iterator it(prim->getVertexRange()); !it.atEnd();++it){
+		island_center += vh.get(*it);
+	}
+	island_center /= prim->getVertexCount();
+	island_center.z() = 0.0;
 	for (const auto &subelem : subelements) {
 		exint num_coords = subelem.coords.entries();
 		GA_Offset point_block = gdp->appendPointBlock(num_coords * 2);
@@ -187,43 +191,38 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 			
 			auto new_prim = GEO_PrimPoly::build(gdp, 4, false, false);
 			new_prim->setVertexPoint(0, ptof0);
-			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(0), source_prim->getVertexOffset(i));
-		
 			new_prim->setVertexPoint(1, ptof2);
-			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(1), source_prim->getVertexOffset((i == 3 ? 0 : i + 1)));
-			
 			new_prim->setVertexPoint(2, ptof3);
-			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(2), new_prim->getVertexOffset(1));
-			
 			new_prim->setVertexPoint(3, ptof1);
-			//vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(3), new_prim->getVertexOffset(0));
+			//UT_Vector3R sideN = new_prim->computeNormal();
+			//if (sideN.z() != 0)
+			//{
+			//	sideN.z() *= -1;
+			//	std::swap(sideN.z(), sideN.y());
+			//}
+			prim->evaluateInteriorPoint(new_prim->getVertexOffset(0), map, coord0.x(), coord0.y());
+			prim->evaluateInteriorPoint(new_prim->getVertexOffset(1), map, coord1.x(), coord1.y());
+			map.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(2), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(1));
+			map.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(3), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(0));
+			
+			UT_Vector3R vc = island_center - vh.get(new_prim->getVertexOffset(0));
+			UT_Vector3R vv = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
+			fpreal proj = vc.dot(vv) / vv.length();
+			vv.normalize();
+			UT_Vector3R projpoint = vh.get(new_prim->getVertexOffset(0)) + vv * proj;
+			UT_Vector3R offset_dir = projpoint - island_center;
+			offset_dir.normalize();
+			
+			vh.add(new_prim->getVertexOffset(0), offset_dir * (height / 10.0));
+			vh.add(new_prim->getVertexOffset(1), offset_dir * (height / 10.0));
 
 			}
 		auto top_prim = GEO_PrimPoly::build(gdp, num_coords, false, false);
 		for (int j = 0; j < num_coords; j++) {
 			top_prim->setVertexPoint(j, top_ptoffs(j));
+			auto vtxoff = top_prim->getVertexOffset(j);
+			prim->evaluateInteriorPoint(vtxoff, map, subelem.coords(j).x(), subelem.coords(j).y());
 		}
-		//pairs.append(pairs(0));
-		//GA_OffsetArray prim_points;
-		//for (GA_Size i = 0; i < subelem.coords.entries(); i++){
-		//	OffsetPair pair1 = pairs(i);
-		//	OffsetPair pair2 = pairs(i + 1);
-		//	prim_points.clear();
-		//	prim_points.append(pair1.myFirst);
-		//	prim_points.append(pair2.myFirst);
-		//	prim_points.append(pair2.mySecond);
-		//	prim_points.append(pair1.mySecond);
-		//	auto prim = build_prim(prim_points);
-		//	if (elem_group)
-		//		elem_group->add(prim);
-		//}
-		//auto front_prim = build_prim(front_offsets);
-		//if (elem_front_group){
-		//	elem_front_group->add(front_prim);
-		//	elem_group->add(front_prim);
-		//}
-		//front_offsets.clear();
-		//pairs.clear();
 	}
 }
 
