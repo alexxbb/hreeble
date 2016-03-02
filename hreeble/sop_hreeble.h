@@ -38,8 +38,10 @@ private:
 	uint SelectedShapesPRM() { return evalInt("elem_shapes", 0, 0); }
 	uint DoConvexPRM() { return evalInt("convex", 0, 0); }
 	uint CreateGroupsPRM() { return evalInt("elem_groups", 0, 0); }
+	uint AutoMappingPRM() { return evalInt("autouv", 0, 0); }
 
-	GA_RWHandleV3 ph;
+	GA_RWHandleV3 phandle; // point handle
+	GA_RWHandleV3D uvhandle; // vertext handle
 	UT_ValArray<GEO_Primitive*> kill_prims;
 	const GA_PrimitiveGroup *source_prim_group;
 	GA_PrimitiveGroup *elements_group;

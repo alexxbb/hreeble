@@ -166,6 +166,12 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 	}
 	island_center /= prim->getVertexCount();
 	island_center.z() = 0.0;
+	// Calc source prim area and uv_area
+	fpreal source_prim_area = prim->calcArea();
+	UT_Vector3R v1 = vh.get(prim->getVertexOffset(1)) - vh.get(prim->getVertexOffset(0));
+	UT_Vector3R v2 = vh.get(prim->getVertexOffset(3)) - vh.get(prim->getVertexOffset(0));
+	fpreal uv_area = v1.length() * v2.length();
+
 	for (const auto &subelem : subelements) {
 		exint num_coords = subelem.coords.entries();
 		GA_Offset point_block = gdp->appendPointBlock(num_coords * 2);
@@ -194,17 +200,16 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 			new_prim->setVertexPoint(1, ptof2);
 			new_prim->setVertexPoint(2, ptof3);
 			new_prim->setVertexPoint(3, ptof1);
-			//UT_Vector3R sideN = new_prim->computeNormal();
-			//if (sideN.z() != 0)
-			//{
-			//	sideN.z() *= -1;
-			//	std::swap(sideN.z(), sideN.y());
-			//}
 			prim->evaluateInteriorPoint(new_prim->getVertexOffset(0), map, coord0.x(), coord0.y());
 			prim->evaluateInteriorPoint(new_prim->getVertexOffset(1), map, coord1.x(), coord1.y());
 			map.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(2), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(1));
 			map.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(3), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(0));
 			
+			UT_Vector3R edge = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
+			fpreal uv_edge_len = edge.length();
+			fpreal extruded_prim_area = new_prim->calcArea();
+			fpreal uv_extruded_area = (extruded_prim_area * uv_area) / source_prim_area;
+			fpreal offset_val = uv_extruded_area / uv_edge_len;
 			UT_Vector3R vc = island_center - vh.get(new_prim->getVertexOffset(0));
 			UT_Vector3R vv = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
 			fpreal proj = vc.dot(vv) / vv.length();
@@ -213,8 +218,8 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 			UT_Vector3R offset_dir = projpoint - island_center;
 			offset_dir.normalize();
 			
-			vh.add(new_prim->getVertexOffset(0), offset_dir * (height / 10.0));
-			vh.add(new_prim->getVertexOffset(1), offset_dir * (height / 10.0));
+			vh.add(new_prim->getVertexOffset(0), offset_dir * offset_val);
+			vh.add(new_prim->getVertexOffset(1), offset_dir * offset_val);
 
 			}
 		auto top_prim = GEO_PrimPoly::build(gdp, num_coords, false, false);

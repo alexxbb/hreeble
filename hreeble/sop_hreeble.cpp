@@ -18,7 +18,7 @@ typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
 
 static PRM_Name prm_names[] = { PRM_Name("panel_height", "Panel Height"),
-								PRM_Name("panel_inset", "Panel Inset"), 
+								PRM_Name("panel_inset", "Panel Inset"),
 								PRM_Name("elem_density", "Elements Density"),
 								PRM_Name("elem_scale", "Element Scale"),
 								PRM_Name("elem_height", "Element Height"),
@@ -26,7 +26,8 @@ static PRM_Name prm_names[] = { PRM_Name("panel_height", "Panel Height"),
 								PRM_Name("gen_panels", "Generate Panels"),
 								PRM_Name("source_groups", "Source Prim Group"),
 								PRM_Name("elem_groups", "Create Output Groups"),
-								PRM_Name("convex", "Convex Geometry"),};
+								PRM_Name("convex", "Convex Geometry"),
+								PRM_Name("autouv", "Auto Texture Mapping") };
 
 static PRM_Default seed_def(12345);
 static PRM_Default inset_def(0.01);
@@ -63,6 +64,7 @@ PRM_Template SOP_Hreeble::myparms[] = {
 	PRM_Template(PRM_ICONSTRIP, 1 , &prm_names[5], &elem_shapes_def, &elem_shapes_list),
 	PRM_Template(PRM_TOGGLE_E, 1, &prm_names[9], PRMoneDefaults), /*convex geometry*/
 	PRM_Template(PRM_TOGGLE_E, 1 , &prm_names[8], PRMzeroDefaults), /*create groups*/
+	PRM_Template(PRM_TOGGLE_E, 1 , &prm_names[10], PRMzeroDefaults), /*auto generate uv*/
 	PRM_Template()
 };
 
@@ -107,7 +109,6 @@ OP_ERROR SOP_Hreeble::cookInputGroups(OP_Context & ctx, int alone)
 	return cookInputPrimitiveGroups(ctx, source_prim_group, alone);
 }
 
-
 void SOP_Hreeble::split_primitive(GEO_Primitive * source_prim, UT_ValArray<GEO_Primitive*>& result, const unsigned short dir)
 {
 	GA_OffsetArray prim_ptoffs;
@@ -123,10 +124,10 @@ void SOP_Hreeble::split_primitive(GEO_Primitive * source_prim, UT_ValArray<GEO_P
 	GEO_PrimPoly *prim1 = GEO_PrimPoly::build(gdp, 4, false, false);
 	GEO_PrimPoly *prim2 = GEO_PrimPoly::build(gdp, 4, false, false);
 	if (dir == 0) {
-		auto svec0 = ph.get(prim_ptoffs(3)) - ph.get(prim_ptoffs(0));
-		auto svec1 = ph.get(prim_ptoffs(2)) - ph.get(prim_ptoffs(1));
-		ph.set(new_ptof, ph.get(prim_ptoffs(1)) + svec1 * 0.5); // vertex  top middle
-		ph.set(new_ptof + 1, ph.get(prim_ptoffs(0)) + svec0 * 0.5); // vertex bottom middle
+		auto svec0 = phandle.get(prim_ptoffs(3)) - phandle.get(prim_ptoffs(0));
+		auto svec1 = phandle.get(prim_ptoffs(2)) - phandle.get(prim_ptoffs(1));
+		phandle.set(new_ptof, phandle.get(prim_ptoffs(1)) + svec1 * 0.5); // vertex  top middle
+		phandle.set(new_ptof + 1, phandle.get(prim_ptoffs(0)) + svec0 * 0.5); // vertex bottom middle
 		
 		prim1->setVertexPoint(0, prim_ptoffs(0));
 		twrangler.copyAttributeValues(prim1->getVertexOffset(0), prim_vtoffs(0));
@@ -147,10 +148,10 @@ void SOP_Hreeble::split_primitive(GEO_Primitive * source_prim, UT_ValArray<GEO_P
 		twrangler.copyAttributeValues(prim2->getVertexOffset(3), prim_vtoffs(3));
 	}
 	else {
-		auto svec0 = ph.get(prim_ptoffs(1)) - ph.get(prim_ptoffs(0));
-		auto svec1 = ph.get(prim_ptoffs(2)) - ph.get(prim_ptoffs(3));
-		ph.set(new_ptof, ph.get(prim_ptoffs(0)) + svec0 * 0.5); // vertex  left middle
-		ph.set(new_ptof+1, ph.get(prim_ptoffs(3)) + svec1 * 0.5); // vertex right middle
+		auto svec0 = phandle.get(prim_ptoffs(1)) - phandle.get(prim_ptoffs(0));
+		auto svec1 = phandle.get(prim_ptoffs(2)) - phandle.get(prim_ptoffs(3));
+		phandle.set(new_ptof, phandle.get(prim_ptoffs(0)) + svec0 * 0.5); // vertex  left middle
+		phandle.set(new_ptof+1, phandle.get(prim_ptoffs(3)) + svec1 * 0.5); // vertex right middle
 		
 		prim1->setVertexPoint(0, prim_ptoffs(0));
 		twrangler.copyAttributeValues(prim1->getVertexOffset(0), prim_vtoffs(0));
@@ -192,30 +193,30 @@ void SOP_Hreeble::divide(GEO_Primitive * prim, UT_ValArray<GEO_Primitive*>& resu
 
 GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & height, const fpreal &inset)
 {
-	//auto build_prim = [this](const GA_OffsetArray &points) -> GEO_Primitive*{
-	//	auto prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-	//	for (const auto pt_off : points) {
-	//		prim->appendVertex(pt_off);
-	//	}
-	//	prim->close();
-	//	return static_cast<GEO_Primitive*>(prim);
-	//};
 	UT_Vector3 primN = source_prim->computeNormal();
 	UT_Vector4 primP;
 	source_prim->evaluateInteriorPoint(primP, 0.5, 0.5);
 	UT_Vector3 top_center = primP + primN * height;
 	GA_VertexWrangler vtxwrangler(*gdp);
-	GA_RWHandleV3D vth = gdp->findTextureAttribute(GA_ATTRIB_VERTEX);
 	UT_Vector3R island_center(0.0, 0.0, 0.0);
-	for (GA_Iterator it(source_prim->getVertexRange()); !it.atEnd();++it){
-		island_center += vth.get(*it);
+	fpreal uv_area, source_prim_area;
+	if (AutoMappingPRM() != 0) {
+		for (GA_Iterator it(source_prim->getVertexRange()); !it.atEnd();++it){
+			island_center += uvhandle.get(*it);
+		}
+		island_center /= source_prim->getVertexCount();
+		island_center.z() = 0.0;
+		// Calc source prim area and uv_area
+		source_prim_area = source_prim->calcArea();
+		UT_Vector3R v1 = uvhandle.get(source_prim->getVertexOffset(1)) - uvhandle.get(source_prim->getVertexOffset(0));
+		UT_Vector3R v2 = uvhandle.get(source_prim->getVertexOffset(3)) - uvhandle.get(source_prim->getVertexOffset(0));
+		uv_area = v1.length() * v2.length();
 	}
-	island_center /= source_prim->getVertexCount();
-	island_center.z() = 0.0;
-	GA_Offset point_block = gdp->appendPointBlock(source_prim->getVertexCount());
 
+	GA_Offset point_block = gdp->appendPointBlock(source_prim->getVertexCount());
 	auto VtxToPt = [this, source_prim](const GA_Size &index) {return gdp->vertexPoint(source_prim->getVertexOffset(index)); };
 	for (GA_Size i = 0;i < source_prim->getVertexCount(); i++) {
+		bool last = i == 3 ? true : false;
 		GA_Offset prev, next = point_block;
 		UT_Vector3 pt2_pos, pt3_pos, inset_dir;
 		GA_Offset pt0 = VtxToPt(i);
@@ -223,16 +224,16 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 
 		GA_Offset pt2 = point_block + (i == 3 ? 0 : i + 1);
 		GA_Offset pt3 = point_block + i;
-		pt2_pos = ph.get(pt1) + primN * height;
-		pt3_pos = ph.get(pt0) + primN * height;
+		pt2_pos = phandle.get(pt1) + primN * height;
+		pt3_pos = phandle.get(pt0) + primN * height;
 		inset_dir = (top_center - pt2_pos);
 		inset_dir.normalize();
 		pt2_pos += inset_dir * inset;
-		ph.set(pt2, pt2_pos);
+		phandle.set(pt2, pt2_pos);
 		inset_dir = (top_center - pt3_pos);
 		inset_dir.normalize();
 		pt3_pos += inset_dir * inset;
-		ph.set(pt3, pt3_pos);
+		phandle.set(pt3, pt3_pos);
 
 		auto new_prim = GEO_PrimPoly::build(gdp, 4, false, false);
 		new_prim->setVertexPoint(0, pt0);
@@ -247,19 +248,23 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		new_prim->setVertexPoint(3, pt3);
 		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(3), new_prim->getVertexOffset(0));
 
+		if (AutoMappingPRM() != 0) {
+			UT_Vector3R edge = uvhandle.get(source_prim->getVertexOffset(last ? 0 : i + 1)) - uvhandle.get(source_prim->getVertexOffset(i));
+			fpreal uv_edge_len = edge.length();
+			fpreal extruded_prim_area = new_prim->calcArea();
+			fpreal uv_extruded_area = (extruded_prim_area * uv_area) / source_prim_area;
+			fpreal offset_val = uv_extruded_area / uv_edge_len;
 
-		UT_Vector3R vc = island_center - vth.get(new_prim->getVertexOffset(0));
-		UT_Vector3R vv = vth.get(new_prim->getVertexOffset(1)) - vth.get(new_prim->getVertexOffset(0));
-		fpreal proj = vc.dot(vv) / vv.length();
-		vv.normalize();
-		UT_Vector3R projpoint = vth.get(new_prim->getVertexOffset(0)) + vv * proj;
-		UT_Vector3R offset_dir = projpoint - island_center;
-		offset_dir.normalize();
-
-		GA_Offset uv1 = new_prim->getVertexOffset(0);
-		GA_Offset uv2 = new_prim->getVertexOffset(1);
-		vth.add(uv1, offset_dir * (height / 10));
-		vth.add(uv2, offset_dir * (height / 10));
+			UT_Vector3R vc = island_center - uvhandle.get(new_prim->getVertexOffset(0));
+			UT_Vector3R vv = uvhandle.get(new_prim->getVertexOffset(1)) - uvhandle.get(new_prim->getVertexOffset(0));
+			fpreal proj = vc.dot(vv) / vv.length();
+			vv.normalize();
+			UT_Vector3R projpoint = uvhandle.get(new_prim->getVertexOffset(0)) + vv * proj;
+			UT_Vector3R offset_dir = projpoint - island_center;
+			offset_dir.normalize();
+			uvhandle.add(new_prim->getVertexOffset(0), offset_dir * offset_val);
+			uvhandle.add(new_prim->getVertexOffset(1), offset_dir * offset_val);
+		}
 		
 	}
 		auto top_prim = GEO_PrimPoly::build(gdp, 4, false, false);
@@ -305,7 +310,7 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 
 	gdp->clearAndDestroy();
 	duplicateSource(0, ctx);
-	ph = gdp->getP();
+	phandle = gdp->getP();
 	if (DoConvexPRM() == 1)
 		gdp->convex(GA_Size(4));
 	UT_ValArray<GEO_Primitive*> panel_prims;
@@ -318,6 +323,13 @@ OP_ERROR SOP_Hreeble::cookMySop(OP_Context & ctx)
 	if (CreateGroupsPRM() != 0) {
 		elements_group = gdp->newPrimitiveGroup("elements");
 		elements_front_group = gdp->newPrimitiveGroup("elements_front");
+	}
+	if (AutoMappingPRM() != 0) {
+		uvhandle = gdp->findTextureAttribute(GA_ATTRIB_VERTEX);
+		if (!uvhandle.isValid()) {
+			addError(SOP_ERR_MISSING_UV, "Please assign vertex UVs on source geometry");
+			return error();
+		}
 	}
 	fpreal panel_height = 0.0;
 	my_seed = seed_parm;
