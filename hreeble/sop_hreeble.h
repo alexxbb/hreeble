@@ -38,13 +38,17 @@ private:
 	uint SelectedShapesPRM() { return evalInt("elem_shapes", 0, 0); }
 	uint DoConvexPRM() { return evalInt("convex", 0, 0); }
 	uint CreateGroupsPRM() { return evalInt("elem_groups", 0, 0); }
-	uint AutoMappingPRM() { return evalInt("autouv", 0, 0); }
+	uint UnwrapUVsPRM() { return evalInt("unwrap_uvs", 0, 0); }
+	uint InheritAttribsPRM() { return evalInt("inherit_attribs", 0, 0); }
 
 	GA_RWHandleV3 phandle; // point handle
-	GA_RWHandleV3D uvhandle; // vertext handle
+	GA_Attribute *uvattr; // vertext handle
+	GA_AttributeRefMap prim_refmap;
 	UT_ValArray<GEO_Primitive*> kill_prims;
 	const GA_PrimitiveGroup *source_prim_group;
 	GA_PrimitiveGroup *elements_group;
 	GA_PrimitiveGroup *elements_front_group;
+	uint inherit_attribs;
+	uint unwrap_uvs;
 	uint my_seed;
 };

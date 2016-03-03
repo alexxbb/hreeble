@@ -1,5 +1,6 @@
 #pragma once
 #include <UT/UT_Vector2Array.h>
+#include <GA/GA_AttributeRefMap.h>
 #include <GU/GU_Detail.h>
 
 struct BBox2D
@@ -28,8 +29,7 @@ public:
 class Element
 {
 public:
-	Element(ElementTypes type, const short &direction, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp);
-	Element(SubElem elem, ElementTypes type, const short &direction);
+	Element(ElementTypes type, const short &direction, GA_Attribute *uvattr, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp);
 	~Element();
 	BBox2D bbox();
 	UT_Vector2R pivot();
@@ -38,12 +38,17 @@ public:
 	void transform(const UT_Vector2R &new_pos, const fpreal &scale, const bool flip);
 	void build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 &primN, const fpreal &height);
 
+	bool unwrapuvs;
+	bool inherit_prim_attrs;
+	GA_AttributeRefMap prim_refmap;
+
 private:
 	ElementTypes type;
 	short direction;
 	UT_ValArray<SubElem> subelements;
 	GA_PrimitiveGroup *elem_group;
 	GA_PrimitiveGroup *elem_front_group;
+	GA_Attribute *uvattr;
 	void move_by_vec(const UT_Vector2R &vec);
 	exint num_points();
 
@@ -51,6 +56,10 @@ private:
 
 std::unique_ptr<Element> make_element(const ElementTypes &elem_type, 
 									  const short &dir, 
+									  bool inherit_prim_attrs,
+						              bool unwrapuvs,
+									  GA_AttributeRefMap &prim_refmap,
+									  GA_Attribute *uvattr,
 									  GA_PrimitiveGroup *elem_grp,
 									  GA_PrimitiveGroup *elem_front_grp);
 

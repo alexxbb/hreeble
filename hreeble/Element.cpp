@@ -8,16 +8,9 @@
 typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
 
-Element::Element(ElementTypes type, const short &direction, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp)
-	:type(type), direction(direction), elem_group(elem_grp), elem_front_group(elem_front_grp)
+Element::Element(ElementTypes type, const short &direction, GA_Attribute *uvattr, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp)
+	:type(type), direction(direction), elem_group(elem_grp), elem_front_group(elem_front_grp), uvattr(uvattr)
 {
-}
-
-Element::Element(SubElem elem, ElementTypes type, const short &direction)
-{
-	subelements.append(elem);
-	this->type = type;
-	this->direction = direction;
 }
 
 
@@ -157,20 +150,24 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 &primN, const fpreal & height)
 {
 	GA_RWHandleV3 ph = gdp->getP();
-	GA_RWHandleV3D vh = gdp->findTextureAttribute(GA_ATTRIB_VERTEX);
-	GA_AttributeRefMap map(*gdp);
-	map.appendDest(vh.getAttribute());
-	UT_Vector3R island_center(0.0, 0.0, 0.0);
-	for (GA_Iterator it(prim->getVertexRange()); !it.atEnd();++it){
-		island_center += vh.get(*it);
+	GA_AttributeRefMap vertex_refmap(*gdp);
+	GA_RWHandleV3D vh;
+	UT_Vector3R island_center;
+	UT_Array<GEO_PrimPoly*> result_prims;
+	fpreal uv_area, source_prim_area;
+	if (this->unwrapuvs) {
+		vh = uvattr;
+		vertex_refmap.appendDest(vh.getAttribute());
+		island_center.assign(0.0);
+		for (GA_Iterator it(prim->getVertexRange()); !it.atEnd(); ++it) { island_center += vh.get(*it); }
+		island_center /= prim->getVertexCount();
+		island_center.z() = 0.0;
+		// Calc source prim area and uv_area
+		source_prim_area = prim->calcArea();
+		UT_Vector3R v1 = vh.get(prim->getVertexOffset(1)) - vh.get(prim->getVertexOffset(0));
+		UT_Vector3R v2 = vh.get(prim->getVertexOffset(3)) - vh.get(prim->getVertexOffset(0));
+		uv_area = v1.length() * v2.length();
 	}
-	island_center /= prim->getVertexCount();
-	island_center.z() = 0.0;
-	// Calc source prim area and uv_area
-	fpreal source_prim_area = prim->calcArea();
-	UT_Vector3R v1 = vh.get(prim->getVertexOffset(1)) - vh.get(prim->getVertexOffset(0));
-	UT_Vector3R v2 = vh.get(prim->getVertexOffset(3)) - vh.get(prim->getVertexOffset(0));
-	fpreal uv_area = v1.length() * v2.length();
 
 	for (const auto &subelem : subelements) {
 		exint num_coords = subelem.coords.entries();
@@ -196,37 +193,48 @@ void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 
 			ph.set(ptof3, pt1 + primN * height);
 			
 			auto new_prim = GEO_PrimPoly::build(gdp, 4, false, false);
+			result_prims.append(new_prim);
 			new_prim->setVertexPoint(0, ptof0);
 			new_prim->setVertexPoint(1, ptof2);
 			new_prim->setVertexPoint(2, ptof3);
 			new_prim->setVertexPoint(3, ptof1);
-			prim->evaluateInteriorPoint(new_prim->getVertexOffset(0), map, coord0.x(), coord0.y());
-			prim->evaluateInteriorPoint(new_prim->getVertexOffset(1), map, coord1.x(), coord1.y());
-			map.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(2), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(1));
-			map.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(3), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(0));
-			
-			UT_Vector3R edge = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
-			fpreal uv_edge_len = edge.length();
-			fpreal extruded_prim_area = new_prim->calcArea();
-			fpreal uv_extruded_area = (extruded_prim_area * uv_area) / source_prim_area;
-			fpreal offset_val = uv_extruded_area / uv_edge_len;
-			UT_Vector3R vc = island_center - vh.get(new_prim->getVertexOffset(0));
-			UT_Vector3R vv = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
-			fpreal proj = vc.dot(vv) / vv.length();
-			vv.normalize();
-			UT_Vector3R projpoint = vh.get(new_prim->getVertexOffset(0)) + vv * proj;
-			UT_Vector3R offset_dir = projpoint - island_center;
-			offset_dir.normalize();
-			
-			vh.add(new_prim->getVertexOffset(0), offset_dir * offset_val);
-			vh.add(new_prim->getVertexOffset(1), offset_dir * offset_val);
+			if (this->unwrapuvs) {
+				prim->evaluateInteriorPoint(new_prim->getVertexOffset(0), vertex_refmap, coord0.x(), coord0.y());
+				prim->evaluateInteriorPoint(new_prim->getVertexOffset(1), vertex_refmap, coord1.x(), coord1.y());
+				vertex_refmap.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(2), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(1));
+				vertex_refmap.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(3), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(0));
+				
+				UT_Vector3R edge = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
+				fpreal uv_edge_len = edge.length();
+				fpreal extruded_prim_area = new_prim->calcArea();
+				fpreal uv_extruded_area = (extruded_prim_area * uv_area) / source_prim_area;
+				fpreal offset_val = uv_extruded_area / uv_edge_len;
+				UT_Vector3R vc = island_center - vh.get(new_prim->getVertexOffset(0));
+				UT_Vector3R vv = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
+				fpreal proj = vc.dot(vv) / vv.length();
+				vv.normalize();
+				UT_Vector3R projpoint = vh.get(new_prim->getVertexOffset(0)) + vv * proj;
+				UT_Vector3R offset_dir = projpoint - island_center;
+				offset_dir.normalize();
+				
+				vh.add(new_prim->getVertexOffset(0), offset_dir * offset_val);
+				vh.add(new_prim->getVertexOffset(1), offset_dir * offset_val);
 
 			}
+			
+		}
 		auto top_prim = GEO_PrimPoly::build(gdp, num_coords, false, false);
+		result_prims.append(top_prim);
 		for (int j = 0; j < num_coords; j++) {
 			top_prim->setVertexPoint(j, top_ptoffs(j));
 			auto vtxoff = top_prim->getVertexOffset(j);
-			prim->evaluateInteriorPoint(vtxoff, map, subelem.coords(j).x(), subelem.coords(j).y());
+			if (this->unwrapuvs)
+				prim->evaluateInteriorPoint(vtxoff, vertex_refmap, subelem.coords(j).x(), subelem.coords(j).y());
+		}
+		if (inherit_prim_attrs) {
+			for (auto const &each : result_prims) {
+				prim_refmap.copyValue(GA_ATTRIB_PRIMITIVE, each->getMapOffset(), GA_ATTRIB_PRIMITIVE, prim->getMapOffset());
+			}
 		}
 	}
 }
@@ -242,9 +250,19 @@ exint Element::num_points()
 
 
 std::unique_ptr<Element> 
-make_element(const ElementTypes &elem_type, const short &dir, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp) 
+make_element(const ElementTypes &elem_type, 
+			const short &dir,
+			bool inherit_prim_attrs,
+			bool unwrapuvs,
+			GA_AttributeRefMap &prim_refmap,
+			GA_Attribute *uvattr,
+			GA_PrimitiveGroup *elem_grp,
+			GA_PrimitiveGroup *elem_front_grp) 
 {
-	std::unique_ptr<Element> w(new Element(elem_type, dir, elem_grp, elem_front_grp));
+	std::unique_ptr<Element> w(new Element(elem_type, dir, uvattr, elem_grp, elem_front_grp));
+	w->unwrapuvs = unwrapuvs;
+	w->inherit_prim_attrs = inherit_prim_attrs;
+	w->prim_refmap = prim_refmap;
 	uint num_elems = 1;
 	if (elem_type <= ElementTypes::STRIPE3)
 	{
