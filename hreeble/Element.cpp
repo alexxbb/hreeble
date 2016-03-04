@@ -135,6 +135,16 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 		offset *= 1.2;
 		move_by_vec(offset);
 	}
+	//if (bounds_intersection().length() != 0) {
+	//	for (auto &subelem : subelements) {
+	//		for (int i = 0; i < subelem.coords.entries(); i++) {
+	//			auto coord = subelem.coords(i);
+	//			if (SYSalmostEqual(coord.x(), 1.0)) {
+	//				
+	//			}
+	//		}
+	//	}
+	//}
 	if (bounds_intersection().length() != 0) {
 		for (auto &subelem : subelements) {
 			for (auto &pt : subelem.coords) {
@@ -349,20 +359,21 @@ make_element(const ElementTypes &elem_type,
 	{
 		auto elem = SubElem();
 		if (dir == 0) {
+			elem.coords.append(V2R(0.99, 0.33));
+			elem.coords.append(V2R(0.99, 0.0));
 			elem.coords.append(V2R(0.0, 0.0));
 			elem.coords.append(V2R(0.0, 0.66));
 			elem.coords.append(V2R(0.33, 0.66));
 			elem.coords.append(V2R(0.33, 0.33));
-			elem.coords.append(V2R(0.99, 0.33));
-			elem.coords.append(V2R(0.99, 0.0));
 		}
 		else {
-			elem.coords.append(V2R(0.0, 0.0));
+			elem.coords.append(V2R(0.33, 0.0));
+			elem.coords.append(V2R(0.0, 0.00));
 			elem.coords.append(V2R(0.0, 0.99));
 			elem.coords.append(V2R(0.66, 0.99));
 			elem.coords.append(V2R(0.66, 0.66));
 			elem.coords.append(V2R(0.33, 0.66));
-			elem.coords.append(V2R(0.33, 0.0));
+
 		}
 		w->append(elem);
 	}

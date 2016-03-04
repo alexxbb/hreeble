@@ -212,31 +212,32 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 	UT_Array<GEO_PrimPoly*> resulted_prims;
 	UT_Vector3R island_center(0.0, 0.0, 0.0);
 	fpreal uv_area, source_prim_area;
+	GA_Size numvertex = source_prim->getVertexCount();
 	GA_RWHandleV3D uvhandle;
 	if (unwrap_uvs != 0) {
 		uvhandle = uvattr;
 		for (GA_Iterator it(source_prim->getVertexRange()); !it.atEnd();++it){
 			island_center += uvhandle.get(*it);
 		}
-		island_center /= source_prim->getVertexCount();
+		island_center /= numvertex;
 		island_center.z() = 0.0;
 		// Calc source prim area and uv_area
 		source_prim_area = source_prim->calcArea();
 		UT_Vector3R v1 = uvhandle.get(source_prim->getVertexOffset(1)) - uvhandle.get(source_prim->getVertexOffset(0));
-		UT_Vector3R v2 = uvhandle.get(source_prim->getVertexOffset(3)) - uvhandle.get(source_prim->getVertexOffset(0));
+		UT_Vector3R v2 = uvhandle.get(source_prim->getVertexOffset(numvertex - 1)) - uvhandle.get(source_prim->getVertexOffset(0));
 		uv_area = v1.length() * v2.length();
 	}
 
-	GA_Offset point_block = gdp->appendPointBlock(source_prim->getVertexCount());
+	GA_Offset point_block = gdp->appendPointBlock(numvertex);
 	auto VtxToPt = [this, source_prim](const GA_Size &index) {return gdp->vertexPoint(source_prim->getVertexOffset(index)); };
-	for (GA_Size i = 0;i < source_prim->getVertexCount(); i++) {
-		bool last = i == 3 ? true : false;
+	for (GA_Size i = 0;i < numvertex; i++) {
+		bool last = (i == numvertex - 1 ? true : false);
 		GA_Offset prev, next = point_block;
 		UT_Vector3 pt2_pos, pt3_pos, inset_dir;
 		GA_Offset pt0 = VtxToPt(i);
-		GA_Offset pt1 = VtxToPt(i == 3 ? 0 : i + 1);
+		GA_Offset pt1 = VtxToPt(last ? 0 : i + 1);
 
-		GA_Offset pt2 = point_block + (i == 3 ? 0 : i + 1);
+		GA_Offset pt2 = point_block + (last ? 0 : i + 1);
 		GA_Offset pt3 = point_block + i;
 		pt2_pos = phandle.get(pt1) + primN * height;
 		pt3_pos = phandle.get(pt0) + primN * height;
@@ -255,7 +256,7 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(0), source_prim->getVertexOffset(i));
 	
 		new_prim->setVertexPoint(1, pt1);
-		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(1), source_prim->getVertexOffset((i == 3 ? 0 : i + 1)));
+		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(1), source_prim->getVertexOffset((last ? 0 : i + 1)));
 		
 		new_prim->setVertexPoint(2, pt2);
 		vtxwrangler.copyAttributeValues(new_prim->getVertexOffset(2), new_prim->getVertexOffset(1));
@@ -282,9 +283,9 @@ GEO_Primitive* SOP_Hreeble::extrude(GEO_Primitive * source_prim, const fpreal & 
 		}
 		
 	}
-		auto top_prim = GEO_PrimPoly::build(gdp, 4, false, false);
+		auto top_prim = GEO_PrimPoly::build(gdp, numvertex, false, false);
 		resulted_prims.append(top_prim);
-		for (int i = 0; i < 4; i++) {
+		for (int i = 0; i < numvertex; i++) {
 			top_prim->setVertexPoint(i, point_block + i);
 			vtxwrangler.copyAttributeValues(top_prim->getVertexOffset(i), source_prim->getVertexOffset(i));
 		}
