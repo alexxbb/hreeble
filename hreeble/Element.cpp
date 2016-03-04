@@ -2,20 +2,15 @@
 #include <GEO/GEO_PrimPoly.h>
 #include <UT/UT_Pair.h>
 #include <SYS/SYS_Math.h>
+#include <GA/GA_AttributeRefMap.h>
+#include <GA/GA_ElementWrangler.h>
 
 typedef UT_Vector2R V2R;
 typedef UT_Pair<GA_Offset, GA_Offset> OffsetPair;
 
-Element::Element(ElementTypes type, const short &direction, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp)
-	:type(type), direction(direction), elem_group(elem_grp), elem_front_group(elem_front_grp)
+Element::Element(ElementTypes type, const short &direction, GA_Attribute *uvattr, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp)
+	:type(type), direction(direction), elem_group(elem_grp), elem_front_group(elem_front_grp), uvattr(uvattr)
 {
-}
-
-Element::Element(SubElem elem, ElementTypes type, const short &direction)
-{
-	subelements.append(elem);
-	this->type = type;
-	this->direction = direction;
 }
 
 
@@ -140,6 +135,16 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 		offset *= 1.2;
 		move_by_vec(offset);
 	}
+	//if (bounds_intersection().length() != 0) {
+	//	for (auto &subelem : subelements) {
+	//		for (int i = 0; i < subelem.coords.entries(); i++) {
+	//			auto coord = subelem.coords(i);
+	//			if (SYSalmostEqual(coord.x(), 1.0)) {
+	//				
+	//			}
+	//		}
+	//	}
+	//}
 	if (bounds_intersection().length() != 0) {
 		for (auto &subelem : subelements) {
 			for (auto &pt : subelem.coords) {
@@ -151,63 +156,98 @@ void Element::transform(const UT_Vector2R & new_pos, const fpreal & scale, const
 }
 
 
+
 void Element::build(GU_Detail *gdp, const GEO_Primitive *prim, const UT_Vector3 &primN, const fpreal & height)
 {
-	auto build_prim = [gdp](const GA_OffsetArray &points) -> GEO_Primitive*{
-		auto new_prim = static_cast<GEO_PrimPoly*>(gdp->appendPrimitive(GA_PRIMPOLY));
-		for (const auto pt_off : points) {
-			new_prim->appendVertex(pt_off);
-		}
-		new_prim->close();
-		return static_cast<GEO_Primitive*>(new_prim);
-	};
-
 	GA_RWHandleV3 ph = gdp->getP();
+	GA_AttributeRefMap vertex_refmap(*gdp);
+	GA_RWHandleV3D vh;
+	UT_Vector3R island_center;
+	UT_Array<GEO_PrimPoly*> result_prims;
+	fpreal uv_area, source_prim_area;
+	if (this->unwrapuvs) {
+		vh = uvattr;
+		vertex_refmap.appendDest(vh.getAttribute());
+		island_center.assign(0.0);
+		for (GA_Iterator it(prim->getVertexRange()); !it.atEnd(); ++it) { island_center += vh.get(*it); }
+		island_center /= prim->getVertexCount();
+		island_center.z() = 0.0;
+		// Calc source prim area and uv_area
+		source_prim_area = prim->calcArea();
+		UT_Vector3R v1 = vh.get(prim->getVertexOffset(1)) - vh.get(prim->getVertexOffset(0));
+		UT_Vector3R v2 = vh.get(prim->getVertexOffset(3)) - vh.get(prim->getVertexOffset(0));
+		uv_area = v1.length() * v2.length();
+	}
+
 	for (const auto &subelem : subelements) {
-		GA_Offset offset_block = gdp->appendPointBlock(subelem.coords.entries() * 2);
-		GA_OffsetArray front_offsets;
-		UT_ValArray<UT_Pair<GA_Offset, GA_Offset>> pairs;
 		exint num_coords = subelem.coords.entries();
+		GA_Offset point_block = gdp->appendPointBlock(num_coords * 2);
+		GA_OffsetArray top_ptoffs;
+		top_ptoffs.clear();
 		for (exint i = 0; i < num_coords; i++) {
-			const UT_Vector2R &coord = subelem.coords(i);
-			UT_Vector4 pos_b;
-			UT_Vector3 pos_t;
+			bool last(i == (num_coords - 1));
+			const UT_Vector2R &coord0 = subelem.coords(i);
+			const UT_Vector2R &coord1 = subelem.coords((last ? 0 : i + 1));
+			UT_Vector4 pt0, pt1, pt2, pt3;
+			GA_Offset ptof0 = point_block + i*2;
+			GA_Offset ptof1 = point_block + i*2 + 1;
+			GA_Offset ptof2 = point_block + (last ? 0 : i*2 + 2);
+			GA_Offset ptof3 = point_block + (last ? 1 : i*2 + 3);
+			top_ptoffs.append(ptof1);
+			prim->evaluateInteriorPoint(pt0, coord0.x(), coord0.y());
+			prim->evaluateInteriorPoint(pt1, coord1.x(), coord1.y());
+			ph.set(ptof0, pt0);
+			ph.set(ptof2, pt1);
+			
+			ph.set(ptof1, pt0 + primN * height);
+			ph.set(ptof3, pt1 + primN * height);
+			
+			auto new_prim = GEO_PrimPoly::build(gdp, 4, false, false);
+			result_prims.append(new_prim);
+			new_prim->setVertexPoint(0, ptof0);
+			new_prim->setVertexPoint(1, ptof2);
+			new_prim->setVertexPoint(2, ptof3);
+			new_prim->setVertexPoint(3, ptof1);
+			if (this->unwrapuvs) {
+				prim->evaluateInteriorPoint(new_prim->getVertexOffset(0), vertex_refmap, coord0.x(), coord0.y());
+				prim->evaluateInteriorPoint(new_prim->getVertexOffset(1), vertex_refmap, coord1.x(), coord1.y());
+				vertex_refmap.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(2), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(1));
+				vertex_refmap.copyValue(GA_ATTRIB_VERTEX, new_prim->getVertexOffset(3), GA_ATTRIB_VERTEX, new_prim->getVertexOffset(0));
+				
+				UT_Vector3R edge = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
+				fpreal uv_edge_len = edge.length();
+				fpreal extruded_prim_area = new_prim->calcArea();
+				fpreal uv_extruded_area = (extruded_prim_area * uv_area) / source_prim_area;
+				fpreal offset_val = uv_extruded_area / uv_edge_len;
+				UT_Vector3R vc = island_center - vh.get(new_prim->getVertexOffset(0));
+				UT_Vector3R vv = vh.get(new_prim->getVertexOffset(1)) - vh.get(new_prim->getVertexOffset(0));
+				fpreal proj = vc.dot(vv) / vv.length();
+				vv.normalize();
+				UT_Vector3R projpoint = vh.get(new_prim->getVertexOffset(0)) + vv * proj;
+				UT_Vector3R offset_dir = projpoint - island_center;
+				offset_dir.normalize();
+				
+				vh.add(new_prim->getVertexOffset(0), offset_dir * offset_val);
+				vh.add(new_prim->getVertexOffset(1), offset_dir * offset_val);
 
-			GA_Offset pt_off1 = offset_block + i;
-			GA_Offset pt_off2 = offset_block + i + num_coords;
-			prim->evaluateInteriorPoint(pos_b, coord.x(), coord.y());
-			pos_t = pos_b + primN * height;
-
-			ph.set(pt_off1, pos_b);
-			ph.set(pt_off2, pos_t);
-			front_offsets.append(pt_off2);
-			pairs.append(OffsetPair(pt_off1, pt_off2));
-
+			}
+			
 		}
-		pairs.append(pairs(0));
-		GA_OffsetArray prim_points;
-		for (GA_Size i = 0; i < subelem.coords.entries(); i++){
-			OffsetPair pair1 = pairs(i);
-			OffsetPair pair2 = pairs(i + 1);
-			prim_points.clear();
-			prim_points.append(pair1.myFirst);
-			prim_points.append(pair2.myFirst);
-			prim_points.append(pair2.mySecond);
-			prim_points.append(pair1.mySecond);
-			auto prim = build_prim(prim_points);
-			if (elem_group)
-				elem_group->add(prim);
+		auto top_prim = GEO_PrimPoly::build(gdp, num_coords, false, false);
+		result_prims.append(top_prim);
+		for (int j = 0; j < num_coords; j++) {
+			top_prim->setVertexPoint(j, top_ptoffs(j));
+			auto vtxoff = top_prim->getVertexOffset(j);
+			if (this->unwrapuvs)
+				prim->evaluateInteriorPoint(vtxoff, vertex_refmap, subelem.coords(j).x(), subelem.coords(j).y());
 		}
-		auto front_prim = build_prim(front_offsets);
-		if (elem_front_group){
-			elem_front_group->add(front_prim);
-			elem_group->add(front_prim);
+		if (inherit_prim_attrs) {
+			for (auto const &each : result_prims) {
+				prim_refmap.copyValue(GA_ATTRIB_PRIMITIVE, each->getMapOffset(), GA_ATTRIB_PRIMITIVE, prim->getMapOffset());
+			}
 		}
-		front_offsets.clear();
-		pairs.clear();
 	}
 }
-
 
 exint Element::num_points()
 {
@@ -220,9 +260,19 @@ exint Element::num_points()
 
 
 std::unique_ptr<Element> 
-make_element(const ElementTypes &elem_type, const short &dir, GA_PrimitiveGroup *elem_grp, GA_PrimitiveGroup *elem_front_grp) 
+make_element(const ElementTypes &elem_type, 
+			const short &dir,
+			bool inherit_prim_attrs,
+			bool unwrapuvs,
+			GA_AttributeRefMap &prim_refmap,
+			GA_Attribute *uvattr,
+			GA_PrimitiveGroup *elem_grp,
+			GA_PrimitiveGroup *elem_front_grp) 
 {
-	std::unique_ptr<Element> w(new Element(elem_type, dir, elem_grp, elem_front_grp));
+	std::unique_ptr<Element> w(new Element(elem_type, dir, uvattr, elem_grp, elem_front_grp));
+	w->unwrapuvs = unwrapuvs;
+	w->inherit_prim_attrs = inherit_prim_attrs;
+	w->prim_refmap = prim_refmap;
 	uint num_elems = 1;
 	if (elem_type <= ElementTypes::STRIPE3)
 	{
@@ -309,20 +359,21 @@ make_element(const ElementTypes &elem_type, const short &dir, GA_PrimitiveGroup 
 	{
 		auto elem = SubElem();
 		if (dir == 0) {
+			elem.coords.append(V2R(0.99, 0.33));
+			elem.coords.append(V2R(0.99, 0.0));
 			elem.coords.append(V2R(0.0, 0.0));
 			elem.coords.append(V2R(0.0, 0.66));
 			elem.coords.append(V2R(0.33, 0.66));
 			elem.coords.append(V2R(0.33, 0.33));
-			elem.coords.append(V2R(0.99, 0.33));
-			elem.coords.append(V2R(0.99, 0.0));
 		}
 		else {
-			elem.coords.append(V2R(0.0, 0.0));
+			elem.coords.append(V2R(0.33, 0.0));
+			elem.coords.append(V2R(0.0, 0.00));
 			elem.coords.append(V2R(0.0, 0.99));
 			elem.coords.append(V2R(0.66, 0.99));
 			elem.coords.append(V2R(0.66, 0.66));
 			elem.coords.append(V2R(0.33, 0.66));
-			elem.coords.append(V2R(0.33, 0.0));
+
 		}
 		w->append(elem);
 	}
